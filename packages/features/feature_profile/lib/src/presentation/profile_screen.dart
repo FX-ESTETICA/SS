@@ -1,6 +1,94 @@
 import 'dart:ui';
+import 'dart:math' as math;
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:pinput/pinput.dart';
+
+/// 真正的十二星座几何连线图绘制器 (Constellation Art)
+class ZodiacConstellationPainter extends CustomPainter {
+  final String sign;
+
+  ZodiacConstellationPainter({required this.sign});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // 根据星座获取相对坐标点阵 (0.0 到 1.0) 和连线逻辑
+    // 这里以双子座 (Gemini) 的经典连线为例，形似两个并排的火柴人
+    final List<Offset> points = _getGeminiPoints(size);
+    final List<List<int>> connections = _getGeminiConnections();
+
+    // 1. 画极细的半透明连线
+    final linePaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.4)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8;
+
+    for (var connection in connections) {
+      final start = points[connection[0]];
+      final end = points[connection[1]];
+      canvas.drawLine(start, end, linePaint);
+    }
+
+    // 2. 画发光的星星节点
+    final starGlowPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.8)
+      ..style = PaintingStyle.fill
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4.0); // 外围光晕
+
+    final starCorePaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+
+    for (int i = 0; i < points.length; i++) {
+      final point = points[i];
+      // 随机给几颗主星更大的尺寸和光晕
+      final bool isMajorStar = i == 0 || i == 4 || i == 7 || i == 11;
+      final double radius = isMajorStar ? 2.5 : 1.5;
+
+      canvas.drawCircle(point, radius + 2, starGlowPaint); // 光晕
+      canvas.drawCircle(point, radius, starCorePaint);     // 亮核
+    }
+  }
+
+  // 双子座 (Gemini) 的相对坐标点阵 (形似两个火柴人手拉手)
+  List<Offset> _getGeminiPoints(Size size) {
+    final w = size.width;
+    final h = size.height;
+    return [
+      // 左侧小人 (Castor)
+      Offset(w * 0.2, h * 0.1),  // 0: 头部
+      Offset(w * 0.3, h * 0.3),  // 1: 脖子/肩膀
+      Offset(w * 0.15, h * 0.4), // 2: 左手
+      Offset(w * 0.45, h * 0.35),// 3: 右手 (牵手点)
+      Offset(w * 0.25, h * 0.6), // 4: 腰部
+      Offset(w * 0.1, h * 0.8),  // 5: 左脚
+      Offset(w * 0.35, h * 0.85),// 6: 右脚
+
+      // 右侧小人 (Pollux)
+      Offset(w * 0.7, h * 0.15), // 7: 头部
+      Offset(w * 0.65, h * 0.35),// 8: 脖子/肩膀
+      Offset(w * 0.85, h * 0.45),// 9: 右手
+      Offset(w * 0.6, h * 0.65), // 10: 腰部
+      Offset(w * 0.5, h * 0.9),  // 11: 左脚
+      Offset(w * 0.8, h * 0.85), // 12: 右脚
+    ];
+  }
+
+  // 定义哪些点之间需要连线 (索引对应上面的 List)
+  List<List<int>> _getGeminiConnections() {
+    return [
+      // 左侧小人连线
+      [0, 1], [1, 2], [1, 3], [1, 4], [4, 5], [4, 6],
+      // 右侧小人连线
+      [7, 8], [8, 3], [8, 9], [8, 10], [10, 11], [10, 12],
+      // 两人牵手连线
+      [3, 8], 
+    ];
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
 
 class ProfileScreen extends StatefulWidget {
   final VoidCallback? onLoginSuccess;
@@ -11,18 +99,107 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
+/// 绘制头像外围的极光半边框与星图连线
+class ConstellationBorderPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+
+    // 1. 恢复左侧的半弧形蓝紫色渐变光晕边框
+    final arcPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0
+      ..strokeCap = StrokeCap.round
+      ..shader = const LinearGradient(
+        colors: [Colors.purpleAccent, Colors.blueAccent, Colors.transparent],
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+      ).createShader(Rect.fromCircle(center: center, radius: radius));
+
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      math.pi / 2, // 起始角度 (底部)
+      math.pi,     // 扫描角度 (画半圆到顶部)
+      false,
+      arcPaint,
+    );
+
+    // 2. 绘制星图节点 (星星) 与连线 (保留纯白发光点)
+    final starPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill
+      ..maskFilter = const MaskFilter.blur(BlurStyle.solid, 2); // 发光效果
+      
+    final linePaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.3)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+
+    // 计算几个星星的坐标 (分布在左半圆弧上)
+    final List<Offset> stars = [];
+    final angles = [math.pi / 2, math.pi * 3 / 4, math.pi, math.pi * 5 / 4, math.pi * 3 / 2];
+    
+    for (var angle in angles) {
+      final x = center.dx + radius * math.cos(angle);
+      final y = center.dy + radius * math.sin(angle);
+      stars.add(Offset(x, y));
+    }
+
+    // 画连线
+    for (int i = 0; i < stars.length - 1; i++) {
+      canvas.drawLine(stars[i], stars[i + 1], linePaint);
+    }
+
+    // 画星星节点
+    for (var star in stars) {
+      canvas.drawCircle(star, 3.0, starPaint);
+      // 内部亮核
+      canvas.drawCircle(star, 1.5, Paint()..color = Colors.white);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
   bool _showOtpInput = false;
   final TextEditingController _emailController = TextEditingController();
+  final ScrollController _feedScrollController = ScrollController();
+  Timer? _autoScrollTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // 启动横向视频流的无限自动滑动
+    _startAutoScroll();
+  }
+
+  void _startAutoScroll() {
+    _autoScrollTimer = Timer.periodic(const Duration(milliseconds: 40), (timer) {
+      if (_feedScrollController.hasClients) {
+        final maxScroll = _feedScrollController.position.maxScrollExtent;
+        final currentScroll = _feedScrollController.offset;
+        if (currentScroll < maxScroll) {
+          _feedScrollController.jumpTo(currentScroll + 1.0); // 极度平滑的偏移
+        } else {
+          _feedScrollController.jumpTo(0); // 触底回滚
+        }
+      }
+    });
+  }
 
   @override
   void dispose() {
+    _autoScrollTimer?.cancel();
+    _feedScrollController.dispose();
     _emailController.dispose();
     super.dispose();
   }
 
-  // 用于避免静态分析器检测到死代码的辅助方法
-  bool _checkIsLoggedIn() => false;
+  // 模拟当前是否已登录的状态，测试登录后的“我的页”效果请将此改为 true
+  bool _checkIsLoggedIn() => true;
 
   @override
   Widget build(BuildContext context) {
@@ -36,40 +213,81 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
           // 2. 内容层
           SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(
-                children: [
-                  const SizedBox(height: 60),
-                  // 顶部：头像、日期、问候语
-                  _buildHeaderInfo(),
-                  
-                  const Spacer(), // 占据中间空间，把输入框推到下面
-                  
-                  // 底部：输入框或第三方登录区域的动态切换
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 300),
-                    transitionBuilder: (Widget child, Animation<double> animation) {
-                      return FadeTransition(
-                        opacity: animation,
-                        child: SlideTransition(
-                          position: Tween<Offset>(
-                            begin: const Offset(0, 0.1),
-                            end: Offset.zero,
-                          ).animate(animation),
-                          child: child,
-                        ),
-                      );
-                    },
-                    child: _showOtpInput ? _buildOtpSection() : _buildEmailAndThirdPartySection(),
-                  ),
-                  const SizedBox(height: 40),
-                ],
-              ),
-            ),
+            child: _checkIsLoggedIn() ? _buildLoggedInProfile() : _buildLoginView(),
           ),
         ],
       ),
+    );
+  }
+
+  /// 未登录状态的视图
+  Widget _buildLoginView() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        children: [
+          const SizedBox(height: 60),
+          // 顶部：头像、日期、问候语
+          _buildHeaderInfo(isLoggedIn: false),
+          
+          const Spacer(), 
+          
+          // 底部：输入框或第三方登录区域的动态切换
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            transitionBuilder: (Widget child, Animation<double> animation) {
+              return FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.1),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
+              );
+            },
+            child: _showOtpInput ? _buildOtpSection() : _buildEmailAndThirdPartySection(),
+          ),
+          const SizedBox(height: 40),
+        ],
+      ),
+    );
+  }
+
+  /// 已登录状态的“我的页”视图 (无边框悬浮风格)
+  Widget _buildLoggedInProfile() {
+    return Stack(
+      children: [
+        // 主内容滚动区
+        SingleChildScrollView(
+          child: Column(
+            children: [
+              const SizedBox(height: 60),
+              // 顶部：左星座 + 中头像 + 右ID
+              _buildLoggedInHeader(),
+              
+              const SizedBox(height: 16),
+              // 名字与动态
+              _buildUserInfo(),
+              
+              const SizedBox(height: 32),
+              // 底部瀑布流内容
+              _buildContentFeed(),
+            ],
+          ),
+        ),
+
+        // 右上角悬浮设置按钮
+        Positioned(
+          top: 16,
+          right: 16,
+          child: IconButton(
+            icon: const Icon(Icons.settings_outlined, color: Colors.white, size: 28),
+            onPressed: _showSettingsSheet,
+          ),
+        ),
+      ],
     );
   }
 
@@ -94,11 +312,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildHeaderInfo() {
+  Widget _buildHeaderInfo({required bool isLoggedIn}) {
     final now = DateTime.now();
     final weekdays = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'];
     final dateStr = '${weekdays[now.weekday - 1]}, ${now.month}月${now.day}日';
-    final bool isLoggedIn = _checkIsLoggedIn(); 
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -159,6 +376,230 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  /// 登录后的顶部 Header：左侧星座、居中头像、右侧生活ID
+  Widget _buildLoggedInHeader() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Row(
+        children: [
+          // 左侧：极具视觉冲击力的大尺寸无色星图（镶嵌感）
+          Expanded(
+            child: Center(
+              child: Column(
+                children: [
+                  SizedBox(
+                    width: 70,
+                    height: 70,
+                    // 完全使用纯代码手工绘制星图连线，彻底抛弃图片
+                    child: CustomPaint(
+                      painter: ZodiacConstellationPainter(sign: 'gemini'),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text('双子座', style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 13, letterSpacing: 2)),
+                ],
+              ),
+            ),
+          ),
+          
+          // 居中：带星图半边框的大头像
+          SizedBox(
+            width: 120,
+            height: 120,
+            child: CustomPaint(
+              painter: ConstellationBorderPainter(),
+              child: Center(
+                child: Container(
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    image: const DecorationImage(
+                      image: NetworkImage('https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'),
+                      fit: BoxFit.cover,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.8),
+                        blurRadius: 30,
+                        spreadRadius: 5,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          
+          // 右侧：生活 ID（居中于右半边）
+          Expanded(
+            child: Center(
+              child: Column(
+                children: [
+                  const Text('生活', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 2)),
+                  const SizedBox(height: 8),
+                  Text('ID: 8848', style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13, letterSpacing: 1)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 登录后的名字与个性签名
+  Widget _buildUserInfo() {
+    return Column(
+      children: [
+        // 名字
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text(
+              'Sarah',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 32,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(Icons.edit_outlined, color: Colors.white.withValues(alpha: 0.4), size: 18),
+          ],
+        ),
+        const SizedBox(height: 12),
+        // 个性签名（生活动态）
+        const Text(
+          '“今天又是充满代码的一天...”',
+          style: TextStyle(
+            color: Colors.white70,
+            fontSize: 14,
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 底部内容流（横向无限自动滑动的视觉展示）
+  Widget _buildContentFeed() {
+    return SizedBox(
+      height: 240, // 横向滑动内容的高度
+      child: ListView.builder(
+        controller: _feedScrollController,
+        scrollDirection: Axis.horizontal,
+        itemCount: 1000, // 足够大的数量实现“无限”滑动错觉
+        itemBuilder: (context, index) {
+          // 模拟视频封面，使用真实的不同图片
+          final realIndex = index % 12;
+          return Container(
+            width: 160,
+            margin: const EdgeInsets.only(right: 2), // 极窄边距
+            color: Colors.white.withValues(alpha: 0.05),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Image.network(
+                  'https://images.unsplash.com/photo-${1500000000000 + realIndex}?auto=format&fit=crop&w=200&q=80',
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(color: Colors.white10),
+                ),
+                // 播放图标和数据
+                Positioned(
+                  bottom: 8,
+                  left: 8,
+                  child: Row(
+                    children: [
+                      const Icon(Icons.play_arrow_outlined, color: Colors.white, size: 16),
+                      const SizedBox(width: 4),
+                      Text('${realIndex + 1}w', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 弹出右侧抽屉式的设置面板
+  void _showSettingsSheet() {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '关闭设置',
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return Align(
+          alignment: Alignment.centerRight, // 靠右对齐
+          child: Material(
+            color: Colors.transparent,
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Container(
+                width: 280, // 抽屉宽度
+                height: double.infinity,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.85),
+                  border: Border(left: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
+                ),
+                padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 24, bottom: 40),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                      child: Text('设置', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                    ),
+                    const Divider(color: Colors.white10, height: 1),
+                    const SizedBox(height: 16),
+                    _buildSettingsItem('账号安全', Icons.security),
+                    _buildSettingsItem('更改邮箱', Icons.email_outlined),
+                    const Spacer(),
+                    const Divider(color: Colors.white10, height: 32),
+                    _buildSettingsItem('退出账号', Icons.logout, color: Colors.redAccent),
+                    const SizedBox(height: 16),
+                    _buildSettingsItem('注销账号', Icons.delete_forever, color: Colors.white38),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(1, 0), // 从右向左滑入
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+          child: child,
+        );
+      },
+    );
+  }
+
+  Widget _buildSettingsItem(String title, IconData icon, {Color color = Colors.white}) {
+    return ListTile(
+      leading: Icon(icon, color: color),
+      title: Text(title, style: TextStyle(color: color, fontSize: 16)),
+      onTap: () {
+        Navigator.pop(context);
+        // 如果是退出，就切回未登录状态
+        if (title == '退出账号') {
+          setState(() {
+            // 这里因为我们是用 _checkIsLoggedIn 模拟的，实际中这里应该是清除本地 Token 的逻辑
+            // 为了演示效果，可以在实际开发中动态切换
+          });
+        }
+      },
     );
   }
 
