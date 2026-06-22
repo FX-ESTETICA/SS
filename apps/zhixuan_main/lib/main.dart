@@ -70,8 +70,8 @@ class _SuperAppShellState extends State<SuperAppShell> {
 
     return Scaffold(
       extendBody: true, // 允许 body 延伸到底部导航栏下方
-      // 沉浸式页面（短视频和个人中心）不需要 AppBar
-      appBar: (_currentIndex == 1 || _currentIndex == 3)
+      // 沉浸式页面（商城、短视频和个人中心）不需要 AppBar
+      appBar: (_currentIndex == 1 || _currentIndex == 2 || _currentIndex == 3)
           ? null 
           : AppBar(title: const Text('智选', style: AppTypography.h1)),
       // 使用 IndexedStack 保持页面状态（比如刷视频切到消息，切回来视频还在继续播）
@@ -83,6 +83,7 @@ class _SuperAppShellState extends State<SuperAppShell> {
         data: Theme.of(context).copyWith(
           splashColor: Colors.transparent, // 移除点击水波纹
           highlightColor: Colors.transparent, // 移除点击高光
+          hoverColor: Colors.transparent, // 移除 Windows 端鼠标悬停时的背景色块（解决切割感）
         ),
         child: BottomNavigationBar(
           currentIndex: _currentIndex,
@@ -91,14 +92,15 @@ class _SuperAppShellState extends State<SuperAppShell> {
           backgroundColor: Colors.transparent, // 完全透明背景
           showSelectedLabels: false, // 隐藏选中时的文字
           showUnselectedLabels: false, // 隐藏未选中时的文字
-          selectedItemColor: (_currentIndex == 1 || _currentIndex == 3) ? Colors.white : AppColors.primary,
-          unselectedItemColor: (_currentIndex == 1 || _currentIndex == 3) ? Colors.white54 : AppColors.textSecondary,
+          // 绝对黑白原则：无论选中还是未选中，全部都是纯白，没有任何透明度！
+          selectedItemColor: Colors.white,
+          unselectedItemColor: Colors.white,
           type: BottomNavigationBarType.fixed,
-          items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_outline), label: ''),
-            BottomNavigationBarItem(icon: Icon(Icons.play_circle_outline), label: ''),
-            BottomNavigationBarItem(icon: Icon(Icons.shopping_bag_outlined), label: ''),
-            BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: ''),
+          items: [
+            BottomNavigationBarItem(icon: Icon(_currentIndex == 0 ? Icons.chat_bubble : Icons.chat_bubble_outline), label: ''),
+            BottomNavigationBarItem(icon: Icon(_currentIndex == 1 ? Icons.play_circle : Icons.play_circle_outline), label: ''),
+            BottomNavigationBarItem(icon: Icon(_currentIndex == 2 ? Icons.shopping_bag : Icons.shopping_bag_outlined), label: ''),
+            BottomNavigationBarItem(icon: Icon(_currentIndex == 3 ? Icons.person : Icons.person_outline), label: ''),
           ],
         ),
       ),

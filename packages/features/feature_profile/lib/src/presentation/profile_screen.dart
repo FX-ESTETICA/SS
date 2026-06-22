@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:pinput/pinput.dart';
+import 'package:core_design_system/core_design_system.dart';
 
 /// 真正的十二星座几何连线图绘制器 (Constellation Art)
 class ZodiacConstellationPainter extends CustomPainter {
@@ -204,18 +205,20 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black, // 深色背景基底
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          // 1. 背景层：图片 + 毛玻璃虚化效果
-          _buildBackground(),
+      backgroundColor: Colors.transparent, // 必须透明以露出全局流光
+      body: AnimatedSpatialBackground(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // 1. 背景层：图片 + 毛玻璃虚化效果
+            _buildBackground(),
 
-          // 2. 内容层
-          SafeArea(
-            child: _checkIsLoggedIn() ? _buildLoggedInProfile() : _buildLoginView(),
-          ),
-        ],
+            // 2. 内容层
+            SafeArea(
+              child: _checkIsLoggedIn() ? _buildLoggedInProfile() : _buildLoginView(),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -291,25 +294,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
+  /// 背景层 (修改为完全透明，因为底层已经有流光了)
   Widget _buildBackground() {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Image.network(
-          'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop', // 暗色抽象背景图
-          fit: BoxFit.cover,
-        ),
-        Container(
-          color: Colors.black.withValues(alpha: 0.6),
-        ),
-        BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 30.0, sigmaY: 30.0),
-          child: Container(
-            color: Colors.black.withValues(alpha: 0.2), 
-          ),
-        ),
-      ],
-    );
+    return const SizedBox(); // 彻底移除原有的星座图蒙版和纯黑背景
   }
 
   Widget _buildHeaderInfo({required bool isLoggedIn}) {
@@ -535,40 +522,42 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       context: context,
       barrierDismissible: true,
       barrierLabel: '关闭设置',
+      barrierColor: Colors.transparent, // 移除左侧黑色遮罩，让其完全透明
       transitionDuration: const Duration(milliseconds: 300),
       pageBuilder: (context, animation, secondaryAnimation) {
         return Align(
           alignment: Alignment.centerRight, // 靠右对齐
           child: Material(
-            color: Colors.transparent,
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-              child: Container(
-                width: 280, // 抽屉宽度
-                height: double.infinity,
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.85),
-                  border: Border(left: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
-                ),
-                padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 24, bottom: 40),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                      child: Text('设置', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-                    ),
-                    const Divider(color: Colors.white10, height: 1),
-                    const SizedBox(height: 16),
-                    _buildSettingsItem('账号安全', Icons.security),
-                    _buildSettingsItem('更改邮箱', Icons.email_outlined),
-                    const Spacer(),
-                    const Divider(color: Colors.white10, height: 32),
-                    _buildSettingsItem('退出账号', Icons.logout, color: Colors.redAccent),
-                    const SizedBox(height: 16),
-                    _buildSettingsItem('注销账号', Icons.delete_forever, color: Colors.white38),
-                  ],
-                ),
+            color: Colors.transparent, // 材质背景透明
+            child: Container(
+              width: 280, // 抽屉宽度
+              decoration: const BoxDecoration(
+                color: Colors.transparent, // 彻底移除黑色背景
+                // border: Border(left: BorderSide(color: Colors.white.withValues(alpha: 0.1))), // 移除左侧细线，更纯粹
+              ),
+              padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 24, bottom: 40),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    child: Text('设置', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                  ),
+                  const Divider(color: Colors.white10, height: 1),
+                  const SizedBox(height: 16),
+                  
+                  // 背景主题切换功能
+                  _buildThemeSelector(),
+                  
+                  const Divider(color: Colors.white10, height: 32),
+                  _buildSettingsItem('账号安全', Icons.security),
+                  _buildSettingsItem('更改邮箱', Icons.email_outlined),
+                  const Spacer(),
+                  const Divider(color: Colors.white10, height: 32),
+                  _buildSettingsItem('退出账号', Icons.logout, color: Colors.redAccent),
+                  const SizedBox(height: 16),
+                  _buildSettingsItem('注销账号', Icons.delete_forever, color: Colors.white38),
+                ],
               ),
             ),
           ),
@@ -582,6 +571,39 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
           child: child,
         );
+      },
+    );
+  }
+
+  Widget _buildThemeSelector() {
+    return ValueListenableBuilder<BackgroundType>(
+      valueListenable: BackgroundManager.instance.currentBackground,
+      builder: (context, currentType, _) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              child: Text('背景主题', style: TextStyle(color: Colors.white54, fontSize: 12)),
+            ),
+            _buildThemeOption('极简纯黑', BackgroundType.pureBlack, currentType),
+            _buildThemeOption('动态流光', BackgroundType.dynamicAurora, currentType),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildThemeOption(String title, BackgroundType type, BackgroundType currentType) {
+    final isSelected = currentType == type;
+    return ListTile(
+      leading: Icon(
+        isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+        color: isSelected ? Colors.white : Colors.white54,
+      ),
+      title: Text(title, style: TextStyle(color: isSelected ? Colors.white : Colors.white54, fontSize: 16)),
+      onTap: () {
+        BackgroundManager.instance.setBackground(type);
       },
     );
   }
@@ -730,7 +752,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             });
           },
           child: const Text('修改邮箱地址', style: TextStyle(color: Colors.white54)),
-        )
+        ),
       ],
     );
   }

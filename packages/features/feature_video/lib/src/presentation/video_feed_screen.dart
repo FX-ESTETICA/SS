@@ -88,8 +88,11 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black, // 视频流页面强制黑色背景
-      body: _buildBody(),
+      backgroundColor: Colors.transparent, // 必须透明以露出全局流光
+      extendBodyBehindAppBar: true,
+      body: AnimatedSpatialBackground(
+        child: _buildBody(), // 主体内容
+      ),
     );
   }
 

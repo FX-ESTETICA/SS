@@ -140,23 +140,28 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Colors.transparent, // 必须透明以露出全局流光
+      extendBodyBehindAppBar: true, // 允许流光背景渗透到导航栏下方
       appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0.5,
-        title: const Text('架构师 (在线)', style: TextStyle(color: AppColors.textPrimary, fontSize: 18)),
+        backgroundColor: Colors.transparent, // 导航栏透明
+        elevation: 0,
+        title: const Text('架构师 (在线)', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
-            icon: const Icon(Icons.more_horiz, color: AppColors.textPrimary),
+            icon: const Icon(Icons.more_horiz, color: Colors.white),
             onPressed: () {},
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(child: _buildMessageList()),
-          _buildInputBar(),
-        ],
+      body: AnimatedSpatialBackground(
+        child: SafeArea(
+          child: Column(
+            children: [
+              Expanded(child: _buildMessageList()),
+              _buildInputBar(),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -185,51 +190,68 @@ class _ChatScreenState extends State<ChatScreen> {
     final isMe = msg.isMe;
     
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.only(bottom: 24), // 增加气泡之间的呼吸感
       child: Row(
         mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isMe) ...[
-            const CircleAvatar(
-              backgroundColor: AppColors.primary,
-              child: Icon(Icons.smart_toy, color: Colors.white, size: 20),
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: Colors.white, // 对方头像底色纯白
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 1),
+              ),
+              child: const Icon(Icons.smart_toy_outlined, color: Colors.black, size: 20), // 黑图标
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 12),
           ],
           
           Flexible(
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
               decoration: BoxDecoration(
-                // 降维打击：微信绿 vs 苹果蓝
-                color: isMe ? const Color(0xFF95EC69) : Colors.white,
+                // 极致黑白：我的消息纯白，对方消息纯黑框
+                color: isMe ? Colors.white : Colors.black,
+                border: isMe ? null : Border.all(color: Colors.white.withValues(alpha: 0.2), width: 1), // 对方消息加极其微弱的白边框界定边界
                 borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(16),
-                  topRight: const Radius.circular(16),
-                  bottomLeft: Radius.circular(isMe ? 16 : 4),
-                  bottomRight: Radius.circular(isMe ? 4 : 16),
+                  topLeft: const Radius.circular(20),
+                  topRight: const Radius.circular(20),
+                  bottomLeft: Radius.circular(isMe ? 20 : 4),
+                  bottomRight: Radius.circular(isMe ? 4 : 20),
                 ),
-                boxShadow: [
+                boxShadow: isMe ? [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+                    color: Colors.white.withValues(alpha: 0.1), // 白色气泡微微发光
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  )
+                ] : null,
               ),
               child: Text(
                 msg.content,
-                style: const TextStyle(fontSize: 16, color: AppColors.textPrimary),
+                style: TextStyle(
+                  fontSize: 16,
+                  color: isMe ? Colors.black : Colors.white, // 极简反差
+                  height: 1.4,
+                ),
               ),
             ),
           ),
           
           if (isMe) ...[
-            const SizedBox(width: 8),
-            const CircleAvatar(
-              backgroundColor: Colors.grey,
-              child: Icon(Icons.person, color: Colors.white, size: 20),
+            const SizedBox(width: 12),
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: Colors.transparent,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 1), // 我的头像线框
+              ),
+              child: const Icon(Icons.person_outline, color: Colors.white, size: 20), // 白图标
             ),
           ],
         ],
@@ -239,47 +261,51 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Widget _buildInputBar() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        border: Border(top: BorderSide(color: Colors.grey.shade200)),
+        color: Colors.transparent, // 必须透明以露出底部流光，不能是纯黑
+        border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 0.5)), // 极细白线分割
       ),
       child: SafeArea(
         child: Row(
           children: [
-            const Icon(Icons.mic_none, size: 28, color: AppColors.textSecondary),
-            const SizedBox(width: 8),
+            const Icon(Icons.mic_none, size: 28, color: Colors.white), // 纯白图标
+            const SizedBox(width: 12),
             Expanded(
               child: Container(
-                constraints: const BoxConstraints(maxHeight: 120), // 限制最大高度，防止布局异常
+                constraints: const BoxConstraints(maxHeight: 120),
                 decoration: BoxDecoration(
-                  color: AppColors.background,
-                  borderRadius: BorderRadius.circular(20),
+                  color: Colors.transparent, // 输入框透明
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.3), width: 1), // 线框输入框
                 ),
                 child: TextField(
                   controller: _textController,
-                  maxLines: null, // 允许换行
+                  maxLines: null,
                   keyboardType: TextInputType.multiline,
                   textInputAction: TextInputAction.send,
                   onSubmitted: (_) => _sendMessage(),
-                  decoration: const InputDecoration(
+                  style: const TextStyle(color: Colors.white), // 输入文字纯白
+                  decoration: InputDecoration(
                     isDense: true,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                     border: InputBorder.none,
                     hintText: '发送消息...',
+                    hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)), // 占位符暗白
                   ),
                 ),
               ),
             ),
-            const SizedBox(width: 8),
-            const Icon(Icons.emoji_emotions_outlined, size: 28, color: AppColors.textSecondary),
-            const SizedBox(width: 8),
+            const SizedBox(width: 12),
             GestureDetector(
               onTap: _sendMessage,
-              child: const CircleAvatar(
-                radius: 16,
-                backgroundColor: AppColors.primary,
-                child: Icon(Icons.send, size: 16, color: Colors.white),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: const BoxDecoration(
+                  color: Colors.white, // 发送按钮纯白实心
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.send, size: 18, color: Colors.black), // 黑图标
               ),
             ),
           ],
