@@ -15,13 +15,15 @@ class ApiClient {
   late final Dio _dio;
 
   ApiClient._internal({required String baseUrl}) {
-    _dio = Dio(BaseOptions(
-      baseUrl: baseUrl,
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 15),
-      responseType: ResponseType.json,
-      contentType: 'application/json',
-    ));
+    _dio = Dio(
+      BaseOptions(
+        baseUrl: baseUrl,
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 15),
+        responseType: ResponseType.json,
+        contentType: 'application/json',
+      ),
+    );
 
     // 添加拦截器：可以在这里统一处理 Token、日志打印
     _dio.interceptors.add(LogInterceptor(responseBody: true));

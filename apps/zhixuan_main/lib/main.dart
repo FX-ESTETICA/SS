@@ -4,6 +4,7 @@ import 'package:core_network/core_network.dart';
 import 'package:feature_video/feature_video.dart';
 import 'package:feature_shop/feature_shop.dart';
 import 'package:feature_im/feature_im.dart';
+import 'package:feature_profile/feature_profile.dart';
 
 void main() async {
   // 确保 Flutter 引擎完全绑定，这是初始化云端服务的前提
@@ -59,12 +60,18 @@ class _SuperAppShellState extends State<SuperAppShell> {
       const ChatScreen(),      // 挂载微信 IM 模块
       const VideoFeedScreen(), // 挂载抖音短视频模块
       const ShopFeedScreen(),  // 挂载淘宝商城模块
-      _buildPlaceholder('个人中心尚未挂载'),
+      ProfileScreen(
+        onLoginSuccess: () {
+          // 登录成功后跳转到视频页（索引 1）
+          setState(() => _currentIndex = 1);
+        },
+      ), // 挂载个人中心模块
     ];
 
     return Scaffold(
-      // 短视频页面不需要 AppBar，如果是视频页则隐藏 AppBar
-      appBar: _currentIndex == 1 
+      extendBody: true, // 允许 body 延伸到底部导航栏下方
+      // 沉浸式页面（短视频和个人中心）不需要 AppBar
+      appBar: (_currentIndex == 1 || _currentIndex == 3)
           ? null 
           : AppBar(title: const Text('智选', style: AppTypography.h1)),
       // 使用 IndexedStack 保持页面状态（比如刷视频切到消息，切回来视频还在继续播）
@@ -72,34 +79,28 @@ class _SuperAppShellState extends State<SuperAppShell> {
         index: _currentIndex,
         children: pages,
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
-        // 抖音模式下，底部导航栏背景为黑色
-        backgroundColor: _currentIndex == 1 ? Colors.black : AppColors.surface,
-        selectedItemColor: _currentIndex == 1 ? Colors.white : AppColors.primary,
-        unselectedItemColor: _currentIndex == 1 ? Colors.white54 : AppColors.textSecondary,
-        type: BottomNavigationBarType.fixed,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_outline), label: '消息 (IM)'),
-          BottomNavigationBarItem(icon: Icon(Icons.play_circle_outline), label: '短视频'),
-          BottomNavigationBarItem(icon: Icon(Icons.shopping_bag_outlined), label: '商城'),
-          BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: '我的'),
-        ],
-      ),
-    );
-  }
-
-  // 临时占位页面
-  Widget _buildPlaceholder(String text) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.construction, size: 80, color: AppColors.primary),
-          const SizedBox(height: 24),
-          Text(text, style: AppTypography.body),
-        ],
+      bottomNavigationBar: Theme(
+        data: Theme.of(context).copyWith(
+          splashColor: Colors.transparent, // 移除点击水波纹
+          highlightColor: Colors.transparent, // 移除点击高光
+        ),
+        child: BottomNavigationBar(
+          currentIndex: _currentIndex,
+          onTap: (index) => setState(() => _currentIndex = index),
+          elevation: 0, // 移除阴影
+          backgroundColor: Colors.transparent, // 完全透明背景
+          showSelectedLabels: false, // 隐藏选中时的文字
+          showUnselectedLabels: false, // 隐藏未选中时的文字
+          selectedItemColor: (_currentIndex == 1 || _currentIndex == 3) ? Colors.white : AppColors.primary,
+          unselectedItemColor: (_currentIndex == 1 || _currentIndex == 3) ? Colors.white54 : AppColors.textSecondary,
+          type: BottomNavigationBarType.fixed,
+          items: const [
+            BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_outline), label: ''),
+            BottomNavigationBarItem(icon: Icon(Icons.play_circle_outline), label: ''),
+            BottomNavigationBarItem(icon: Icon(Icons.shopping_bag_outlined), label: ''),
+            BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: ''),
+          ],
+        ),
       ),
     );
   }

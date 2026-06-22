@@ -32,7 +32,7 @@ class VideoFeedScreen extends StatefulWidget {
 }
 
 class _VideoFeedScreenState extends State<VideoFeedScreen> {
-  late ScrollController _pageController;
+  late PageController _pageController;
   final List<VideoModel> _videos = [];
   bool _isLoading = true;
   String? _errorMessage;
@@ -44,7 +44,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     if (Platform.isWindows) {
       WindowsVideoPlayer.registerWith();
     }
-    _pageController = ScrollController();
+    _pageController = PageController();
     _fetchVideosFromCloud();
   }
 
@@ -115,7 +115,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
               },
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
               child: const Text('点击重试 (刷新)', style: TextStyle(color: Colors.white)),
-            )
+            ),
           ],
         ),
       );
@@ -130,15 +130,12 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
             _videos.clear();
             await _fetchVideosFromCloud();
           },
-          child: ListView.builder(
+          child: PageView.builder(
             controller: _pageController,
             scrollDirection: Axis.vertical, // 上下滑动
             itemCount: _videos.length,
             itemBuilder: (context, index) {
-              return SizedBox(
-                height: MediaQuery.of(context).size.height,
-                child: _VideoPlayerItem(video: _videos[index]),
-              );
+              return _VideoPlayerItem(video: _videos[index]);
             },
           ),
         ),

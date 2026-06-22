@@ -23,6 +23,8 @@ dependencies:
     path: ../../packages/features/feature_shop
   feature_im:
     path: ../../packages/features/feature_im
+  feature_profile:
+    path: ../../packages/features/feature_profile
 
 dev_dependencies:
   flutter_test:

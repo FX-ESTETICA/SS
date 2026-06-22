@@ -2,8 +2,10 @@
 **最后更新:** 2026-06-22
 
 > ⚠️ **AI 强制指令 (AI Handover Instructions):** 
-> 当新会话开启并要求你读取此文件时，**你必须无条件遵循以下所有架构设计、技术栈约束和避坑指南**。
-> 你还需要同时读取 `supabase/migrations/` 目录下的 SQL 文件，以获取当前最新的云端数据库真实结构，才能做到 100% 完美衔接开发。
+> 1. 当新会话开启并要求你读取此文件时，**你必须无条件遵循以下所有架构设计、技术栈约束和避坑指南**。
+> 2. 你还需要同时读取 `supabase/migrations/` 目录下的 SQL 文件，以获取当前最新的云端数据库真实结构，才能做到 100% 完美衔接开发。
+> 3. **绝对执行原则：完成 UI 或功能更新后，绝不要询问用户“是否需要编译预览”，你必须直接、主动地在终端执行 `flutter run -d windows` （或者使用热重载），用户只看最终效果！**
+> 4. **多语言基础语言规范：所有 UI 界面文字必须使用中文（作为未来 i18n 的基础），绝对不要在 UI 中硬编码英文。**
 
 ---
 
@@ -45,9 +47,13 @@
 - **问题:** Windows Web 引擎 (CanvasKit/HTML) 无法承载视频解码器和复杂缓存图片的高性能渲染。
 - **解决方案:** 开发和预览**必须**使用原生的 Windows 桌面级应用程序进行编译 (`flutter run -d windows`)。
 
-### 🚨 坑点 2: 热更新失效 / LNK1168 .exe 被锁定
-- **问题:** 修改底层 C++ 渲染树引发崩溃时，热重载断链，再次编译提示无法写入 `zhixuan_main.exe`。
-- **解决方案 (AI 全权接管):** 遇到此报错，AI 必须立刻在终端执行 `taskkill /F /IM zhixuan_main.exe` 强制杀掉旧进程，然后重新冷启动 `flutter run -d windows`。绝对不要让用户手动操作。
+### 🚨 坑点 2: Windows 编译缓存导致 UI 死活不更新 / LNK1168
+- **问题:** 修改代码后，即使 `taskkill` 杀掉进程重新 `flutter run`，界面依然是旧的。这是因为 Windows 下 CMake/Ninja 增量编译缓存损坏，导致一直复用旧的 `.exe`。
+- **终极解决方案 (AI 全权接管):** 绝对不能只杀进程！必须执行“核弹级”清理：
+  1. `taskkill /F /IM zhixuan_main.exe`
+  2. `cd apps/zhixuan_main && flutter clean` (必须清空 build 缓存！)
+  3. `flutter pub get`
+  4. 重新 `flutter run -d windows`
 
 ### 🚨 坑点 3: 桌面端布局约束异常 (RenderBox was not laid out)
 - **问题:** 在 IM 聊天框等场景中，`TextField` 设置了 `maxLines: null` 且被包裹在 `Expanded` 中，Web/桌面端由于屏幕无边界，导致原生 C++ 渲染引擎内存溢出自毁。

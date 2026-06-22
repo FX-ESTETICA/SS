@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:core_design_system/core_design_system.dart';
 import 'package:core_network/core_network.dart';
-import 'package:intl/intl.dart';
 
 /// 消息数据模型
 class MessageModel {
@@ -119,6 +118,7 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     } catch (e) {
       // 发送失败处理
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('消息发送失败')),
       );
