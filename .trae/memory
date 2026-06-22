@@ -1,0 +1,4 @@
+1. 视频流重构为三实例 Ring Buffer (C++ 级)
+2. AutoScrollBanner 改用 Transform.scale 避免 Layout Trashing
+3. ImageCache 扩容至 256MB，启用 cacheExtent 预渲染
+4. 引入全局交互休眠机制 (3s 冻结 GPU/CPU)

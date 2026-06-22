@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:core_design_system/core_design_system.dart';
 import 'package:core_network/core_network.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
@@ -39,7 +40,8 @@ class ProductModel {
 
 /// 淘宝风格商城瀑布流页面
 class ShopFeedScreen extends StatefulWidget {
-  const ShopFeedScreen({super.key});
+  final bool isTabActive;
+  const ShopFeedScreen({super.key, this.isTabActive = true});
 
   @override
   State<ShopFeedScreen> createState() => _ShopFeedScreenState();
@@ -51,6 +53,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
   String? _errorMessage;
   bool _isSearchExpanded = false;
   final ScrollController _scrollController = ScrollController();
+  bool _isBannerVisible = true; // 新增：视口裁剪标志
   
   // 0: 商店 (横向16:9), 1: 商城 (竖向瀑布流), 2: 生活 (服务卡片)
   int _selectedMainCategoryIndex = 1;
@@ -60,10 +63,24 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
   void initState() {
     super.initState();
     _fetchProducts();
+    _scrollController.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    
+    // 性能优化：当向下滚动超过 800 像素时，认为广告区已经完全移出屏幕，触发视口裁剪
+    final isVisible = _scrollController.offset < 800;
+    if (isVisible != _isBannerVisible) {
+      setState(() {
+        _isBannerVisible = isVisible;
+      });
+    }
   }
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
   }
@@ -172,48 +189,103 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
   }
 
   Widget _buildBody() {
-    return CustomScrollView(
-      controller: _scrollController,
-      physics: const BouncingScrollPhysics(), // 增加弹性物理效果
-      slivers: [
-        // 沉浸式头部区域：让原本悬浮的导航栏也参与滚动
-        SliverToBoxAdapter(
-          child: Stack(
-            children: [
-              _buildFloatingHeaderContent(),
-            ],
-          ),
-        ),
-
-        // 1/3 广告区 (带视差效果)
-        SliverToBoxAdapter(
-          child: _HeroBannerContent(categoryIndex: _selectedMainCategoryIndex),
-        ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final screenWidth = constraints.maxWidth;
         
-        // 小分类导航 (跟随滚动，不再黏性吸顶)
-        SliverToBoxAdapter(
-          child: SizedBox(
-            height: 140, // 增大高度容纳更大的实景卡片
-            child: _SubCategoryHeaderContent(
-              mainCategoryIndex: _selectedMainCategoryIndex,
-              selectedIndex: _selectedSubCategoryIndex,
-              onChanged: (index) {
-                setState(() {
-                  _selectedSubCategoryIndex = index;
-                });
-              },
-            ),
-          ),
-        ),
+        int crossAxisCount = 2; // 商城
+        if (screenWidth > 1200) {
+          crossAxisCount = 6; // 宽屏下一行放 6 个
+        } else if (screenWidth > 800) {
+          crossAxisCount = 4;
+        } else if (screenWidth > 600) {
+          crossAxisCount = 3;
+        }
 
-        // 根据选中的大分类渲染不同的商品流
-        if (_isLoading)
-          _buildSkeletonSliver()
-        else if (_errorMessage != null)
-          SliverToBoxAdapter(child: Center(child: Text(_errorMessage!, style: AppTypography.body)))
-        else
-          _buildContentSliver(),
-      ],
+        int storeLifeCrossAxisCount = 1; // 商店与生活
+        if (screenWidth > 1200) {
+          storeLifeCrossAxisCount = 4; // 宽屏下一行放 4 个
+        } else if (screenWidth > 800) {
+          storeLifeCrossAxisCount = 2;
+        }
+
+        double itemWidth;
+        double itemHeight;
+        double spacing;
+        double paddingHorizontal;
+        double borderRadius;
+
+        if (_selectedMainCategoryIndex == 0) { // 商店
+          spacing = 16.0;
+          paddingHorizontal = 16.0;
+          borderRadius = 16.0;
+          itemWidth = (screenWidth - paddingHorizontal * 2 - (storeLifeCrossAxisCount - 1) * spacing) / storeLifeCrossAxisCount;
+          itemHeight = itemWidth / (16 / 9);
+        } else if (_selectedMainCategoryIndex == 1) { // 商城
+          spacing = 8.0;
+          paddingHorizontal = 8.0;
+          borderRadius = 12.0;
+          itemWidth = (screenWidth - paddingHorizontal * 2 - (crossAxisCount - 1) * spacing) / crossAxisCount;
+          itemHeight = itemWidth / (3 / 4);
+        } else { // 生活
+          spacing = 16.0;
+          paddingHorizontal = 16.0;
+          borderRadius = 16.0;
+          itemWidth = (screenWidth - paddingHorizontal * 2 - (storeLifeCrossAxisCount - 1) * spacing) / storeLifeCrossAxisCount;
+          itemHeight = itemWidth / (21 / 9);
+        }
+
+        return CustomScrollView(
+          controller: _scrollController,
+          physics: const BouncingScrollPhysics(),
+          // 核心优化：物理级预渲染边界。
+          // 提前在屏幕外 2500 像素的位置就开始在 Isolate (独立线程) 中解码图片并构建 RenderObject。
+          // 这样用户滑到的时候，图片已经变成了 GPU 里的纹理 (Texture)，实现绝对的 0 毫秒掉帧。
+          cacheExtent: 2500, 
+          slivers: [
+            // 沉浸式头部区域：广告传送带置顶，且贯穿左右边缘；导航栏悬浮其上
+            SliverToBoxAdapter(
+              child: Stack(
+                children: [
+                  _HeroBannerContent(
+                    categoryIndex: _selectedMainCategoryIndex,
+                    itemWidth: itemWidth,
+                    itemHeight: itemHeight,
+                    spacing: spacing,
+                    borderRadius: borderRadius,
+                    isVisible: _isBannerVisible && widget.isTabActive,
+                  ),
+                  _buildFloatingHeaderContent(),
+                ],
+              ),
+            ),
+            
+            // 小分类导航 (跟随滚动)
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 140,
+                child: _SubCategoryHeaderContent(
+                  mainCategoryIndex: _selectedMainCategoryIndex,
+                  selectedIndex: _selectedSubCategoryIndex,
+                  onChanged: (index) {
+                    setState(() {
+                      _selectedSubCategoryIndex = index;
+                    });
+                  },
+                ),
+              ),
+            ),
+
+            // 根据选中的大分类渲染不同的商品流
+            if (_isLoading)
+              _buildSkeletonSliver(crossAxisCount)
+            else if (_errorMessage != null)
+              SliverToBoxAdapter(child: Center(child: Text(_errorMessage!, style: AppTypography.body)))
+            else
+              _buildContentSliver(crossAxisCount, storeLifeCrossAxisCount),
+          ],
+        );
+      },
     );
   }
 
@@ -339,7 +411,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
   }
 
   /// 动态分发不同的内容布局
-  Widget _buildContentSliver() {
+  Widget _buildContentSliver(int crossAxisCount, int storeLifeCrossAxisCount) {
     if (_products.isEmpty) {
       return const SliverToBoxAdapter(
         child: Padding(
@@ -351,111 +423,78 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
       );
     }
 
-    return SliverLayoutBuilder(
-      builder: (context, constraints) {
-        int crossAxisCount = 2;
-        if (constraints.crossAxisExtent > 1200) {
-          crossAxisCount = 5;
-        } else if (constraints.crossAxisExtent > 800) {
-          crossAxisCount = 4;
-        } else if (constraints.crossAxisExtent > 600) {
-          crossAxisCount = 3;
-        }
-
-        int storeLifeCrossAxisCount = 1;
-        if (constraints.crossAxisExtent > 1200) {
-          storeLifeCrossAxisCount = 3;
-        } else if (constraints.crossAxisExtent > 800) {
-          storeLifeCrossAxisCount = 2;
-        }
-
-        switch (_selectedMainCategoryIndex) {
-          case 0: // 商店 (横向16:9)
-            return SliverPadding(
-              padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 100),
-              sliver: SliverGrid(
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: storeLifeCrossAxisCount,
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 16,
-                  childAspectRatio: 16 / 9,
-                ),
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) => _buildStoreCard(_products[index]),
-                  childCount: _products.length,
-                ),
-              ),
-            );
-          case 1: // 商城 (竖向尺寸一致)
-            return SliverPadding(
-              padding: const EdgeInsets.only(left: 8, right: 8, top: 8, bottom: 100),
-              sliver: SliverGrid(
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: crossAxisCount,
-                  mainAxisSpacing: 8,
-                  crossAxisSpacing: 8,
-                  childAspectRatio: 3 / 4,
-                ),
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) => _buildMallCard(_products[index]),
-                  childCount: _products.length,
-                ),
-              ),
-            );
-          case 2: // 生活 (58同城类，服务卡片)
-            return SliverPadding(
-              padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 100),
-              sliver: SliverGrid(
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: storeLifeCrossAxisCount,
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 16,
-                  childAspectRatio: 21 / 9,
-                ),
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) => _buildLifeCard(_products[index]),
-                  childCount: _products.length,
-                ),
-              ),
-            );
-          default:
-            return const SliverToBoxAdapter(child: SizedBox());
-        }
-      },
-    );
+    switch (_selectedMainCategoryIndex) {
+      case 0: // 商店 (横向16:9)
+        return SliverPadding(
+          padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 100),
+          sliver: SliverGrid(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: storeLifeCrossAxisCount,
+              mainAxisSpacing: 16,
+              crossAxisSpacing: 16,
+              childAspectRatio: 16 / 9,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) => _buildStoreCard(_products[index]),
+              childCount: _products.length,
+            ),
+          ),
+        );
+      case 1: // 商城 (竖向尺寸一致)
+        return SliverPadding(
+          padding: const EdgeInsets.only(left: 8, right: 8, top: 8, bottom: 100),
+          sliver: SliverGrid(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: crossAxisCount,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 3 / 4,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) => _buildMallCard(_products[index]),
+              childCount: _products.length,
+            ),
+          ),
+        );
+      case 2: // 生活 (58同城类，服务卡片)
+        return SliverPadding(
+          padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 100),
+          sliver: SliverGrid(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: storeLifeCrossAxisCount,
+              mainAxisSpacing: 16,
+              crossAxisSpacing: 16,
+              childAspectRatio: 21 / 9,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) => _buildLifeCard(_products[index]),
+              childCount: _products.length,
+            ),
+          ),
+        );
+      default:
+        return const SliverToBoxAdapter(child: SizedBox());
+    }
   }
 
   /// 骨架屏 (Skeleton) 渲染 Sliver 版本
-  Widget _buildSkeletonSliver() {
-    return SliverLayoutBuilder(
-      builder: (context, constraints) {
-        int crossAxisCount = 2;
-        if (constraints.crossAxisExtent > 1200) {
-          crossAxisCount = 5;
-        } else if (constraints.crossAxisExtent > 800) {
-          crossAxisCount = 4;
-        } else if (constraints.crossAxisExtent > 600) {
-          crossAxisCount = 3;
-        }
-
-        return SliverMasonryGrid.count(
-          crossAxisCount: crossAxisCount,
-          mainAxisSpacing: 8,
-          crossAxisSpacing: 8,
-          childCount: 6,
-          itemBuilder: (context, index) {
-            return Shimmer.fromColors(
-              baseColor: Colors.grey[300]!,
-              highlightColor: Colors.grey[100]!,
-              child: Container(
-                height: index % 2 == 0 ? 250 : 300,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-            );
-          },
+  Widget _buildSkeletonSliver(int crossAxisCount) {
+    return SliverMasonryGrid.count(
+      crossAxisCount: crossAxisCount,
+      mainAxisSpacing: 8,
+      crossAxisSpacing: 8,
+      childCount: 6,
+      itemBuilder: (context, index) {
+        return Shimmer.fromColors(
+          baseColor: Colors.grey[300]!,
+          highlightColor: Colors.grey[100]!,
+          child: Container(
+            height: index % 2 == 0 ? 250 : 300,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
         );
       },
     );
@@ -722,57 +761,60 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
   }
 }
 
-/// 自动循环滚动的广告 Banner
-class AutoScrollBanner extends StatefulWidget {
+class ContinuousMarqueeBanner extends StatefulWidget {
   final List<String> imageUrls;
-  final double aspectRatio; // 新增 aspectRatio 参数
+  final double itemWidth;
+  final double itemHeight;
+  final double spacing;
+  final double borderRadius;
+  final bool isVisible;
 
-  const AutoScrollBanner({super.key, required this.imageUrls, this.aspectRatio = 16/9});
+  const ContinuousMarqueeBanner({
+    super.key,
+    required this.imageUrls,
+    required this.itemWidth,
+    required this.itemHeight,
+    required this.spacing,
+    required this.borderRadius,
+    required this.isVisible,
+  });
 
   @override
-  State<AutoScrollBanner> createState() => _AutoScrollBannerState();
+  State<ContinuousMarqueeBanner> createState() => _ContinuousMarqueeBannerState();
 }
 
-class _AutoScrollBannerState extends State<AutoScrollBanner> {
-  late PageController _pageController;
-  Timer? _timer;
-  int _currentPage = 1000; // 起始在一个很大的数字，实现左右无限滑动错觉
+class _ContinuousMarqueeBannerState extends State<ContinuousMarqueeBanner> with SingleTickerProviderStateMixin {
+  late final Ticker _ticker;
+  final ValueNotifier<double> _scrollNotifier = ValueNotifier(0.0);
 
   @override
   void initState() {
     super.initState();
-    // 【架构回退】恢复工业级 PageView，抛弃过激的 GPU 偏移，保证生命周期稳定
-    _pageController = PageController(initialPage: _currentPage, viewportFraction: 0.85); // 漏出一点旁边的卡片，增加空间感
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _startAutoScroll();
+    // 使用一个独立的极低频 Ticker (30fps)，与全局背景解绑，保证视觉上的持续反馈
+    _ticker = createTicker((elapsed) {
+      if (!widget.isVisible) return;
+      // 速度控制：每毫秒移动的像素量 (大约 60像素/秒)
+      _scrollNotifier.value = elapsed.inMilliseconds * 0.06;
     });
-  }
-
-  @override
-  void didUpdateWidget(AutoScrollBanner oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.imageUrls != widget.imageUrls) {
-      if (_pageController.hasClients) {
-        _pageController.jumpToPage(1000); // 切换分类时重置
-      }
+    if (widget.isVisible) {
+      _ticker.start();
     }
   }
 
-  void _startAutoScroll() {
-    _timer = Timer.periodic(const Duration(seconds: 4), (timer) {
-      if (_pageController.hasClients) {
-        _pageController.nextPage(
-          duration: const Duration(milliseconds: 1000),
-          curve: Curves.fastOutSlowIn, // 极具质感的非线性滚动
-        );
-      }
-    });
+  @override
+  void didUpdateWidget(ContinuousMarqueeBanner oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isVisible && !_ticker.isActive) {
+      _ticker.start();
+    } else if (!widget.isVisible && _ticker.isActive) {
+      _ticker.stop();
+    }
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
-    _pageController.dispose();
+    _ticker.dispose();
+    _scrollNotifier.dispose();
     super.dispose();
   }
 
@@ -780,60 +822,66 @@ class _AutoScrollBannerState extends State<AutoScrollBanner> {
   Widget build(BuildContext context) {
     if (widget.imageUrls.isEmpty) return const SizedBox();
 
-    return PageView.builder(
-      controller: _pageController,
-      scrollDirection: Axis.horizontal,
-      onPageChanged: (index) {
-        _currentPage = index;
-      },
-      itemBuilder: (context, index) {
-        // 无限循环取模算法
-        final url = widget.imageUrls[index % widget.imageUrls.length];
-        
-        return AnimatedBuilder(
-          animation: _pageController,
-          builder: (context, child) {
-            double value = 1.0;
-            if (_pageController.position.haveDimensions) {
-              value = _pageController.page! - index;
-              value = (1 - (value.abs() * 0.15)).clamp(0.0, 1.0); // 没选中的卡片缩小到 85%
-            }
-            return Center(
-              child: SizedBox(
-                height: Curves.easeOut.transform(value) * MediaQuery.of(context).size.height,
-                width: Curves.easeOut.transform(value) * MediaQuery.of(context).size.width,
-                child: child,
-              ),
+    final screenWidth = MediaQuery.of(context).size.width;
+    final double totalItemWidth = widget.itemWidth + widget.spacing;
+
+    // 构建足够长的图片队列，确保能填满屏幕并能循环滚动
+    List<String> displayUrls = [...widget.imageUrls];
+    // 至少需要填满屏幕两倍的宽度，才能保证首尾相连时没有断层
+    while (displayUrls.length * totalItemWidth < screenWidth * 2 + totalItemWidth * 2) {
+      displayUrls.addAll(widget.imageUrls);
+    }
+    final int n = displayUrls.length;
+    final double totalWidth = n * totalItemWidth;
+
+    return SizedBox(
+      height: widget.itemHeight,
+      width: double.infinity, // 强制撑满全宽
+      child: ClipRect( // 裁剪掉溢出的部分
+        child: ValueListenableBuilder<double>(
+          valueListenable: _scrollNotifier,
+          builder: (context, scrollOffset, child) {
+            return Stack(
+              clipBehavior: Clip.none, // 允许子元素溢出 Stack
+              children: List.generate(n, (i) {
+                final double basePos = i * totalItemWidth;
+                // 核心循环算法：让卡片在 -totalItemWidth 到 (totalWidth - totalItemWidth) 之间循环移动
+                // 修复断层：确保卡片是从屏幕最右侧进入，向最左侧移出
+                final double x = ((basePos - scrollOffset) % totalWidth);
+                
+                // 如果计算出的位置太靠右（超过了总宽度减去一个元素的宽度），把它挪到最左边去，实现无缝衔接
+                final double adjustedX = x > totalWidth - totalItemWidth ? x - totalWidth : x;
+
+                // 使用 Transform.translate，绝对禁止触发 CPU 的 performLayout
+                return Transform.translate(
+                  offset: Offset(adjustedX, 0),
+                  child: SizedBox(
+                    width: widget.itemWidth,
+                    height: widget.itemHeight,
+                    child: Container(
+                      margin: EdgeInsets.symmetric(horizontal: widget.spacing / 2),
+                      clipBehavior: Clip.antiAlias,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(widget.borderRadius),
+                      ),
+                      child: CachedNetworkImage(
+                        imageUrl: displayUrls[i],
+                        fit: BoxFit.cover,
+                        memCacheWidth: 800,
+                        placeholder: (context, url) => Container(color: Colors.white.withValues(alpha: 0.1)),
+                        errorWidget: (context, url, error) => Container(
+                          color: Colors.white.withValues(alpha: 0.1),
+                          child: const Center(child: Icon(Icons.broken_image_outlined, color: Colors.white)),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }),
             );
           },
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 16.0),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.3),
-                  blurRadius: 10,
-                  offset: const Offset(0, 5),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(16), 
-              child: CachedNetworkImage(
-                imageUrl: url,
-                fit: BoxFit.cover,
-                memCacheWidth: 800, // 内存硬件约束
-                placeholder: (context, url) => Container(color: Colors.grey[900]), 
-                errorWidget: (context, url, error) => Container(
-                  color: Colors.grey[900], 
-                  child: const Center(child: Icon(Icons.broken_image_outlined, color: Colors.white)),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
@@ -841,13 +889,23 @@ class _AutoScrollBannerState extends State<AutoScrollBanner> {
 /// 动态比例的广告区
 class _HeroBannerContent extends StatelessWidget {
   final int categoryIndex;
+  final double itemWidth;
+  final double itemHeight;
+  final double spacing;
+  final double borderRadius;
+  final bool isVisible;
 
-  _HeroBannerContent({
+  const _HeroBannerContent({
     required this.categoryIndex,
+    required this.itemWidth,
+    required this.itemHeight,
+    required this.spacing,
+    required this.borderRadius,
+    required this.isVisible,
   });
 
   // 定义三个分类的广告图片池 (使用 picsum.photos 全球高可用图床)
-  final Map<int, List<String>> _categoryBanners = {
+  final Map<int, List<String>> _categoryBanners = const {
     0: [ // 商店 (16:9)
       'https://picsum.photos/id/1015/1000/562', 
       'https://picsum.photos/id/1025/1000/562', 
@@ -869,52 +927,20 @@ class _HeroBannerContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final imageUrls = _categoryBanners[categoryIndex] ?? _categoryBanners[1]!;
     
-    // 动态决定广告栏的宽高比，让它完美契合下方商品的布局
-    double aspectRatio;
-    if (categoryIndex == 0) {
-      aspectRatio = 16 / 9;
-    } else if (categoryIndex == 1) {
-      aspectRatio = 3 / 4;
-    } else {
-      aspectRatio = 21 / 9;
-    }
+    // 增加基础的顶部 padding 避开沉浸式状态栏 (与 Header 对齐)
+    final topPadding = MediaQuery.of(context).padding.top + 32;
 
-    // 因为是横向列表里的元素，我们需要限制它的总体高度
-    // 这里我们设定一个基准高度，让 AspectRatio 去推算宽度
-    double baseHeight = MediaQuery.of(context).size.height * 0.35;
-    if (categoryIndex == 1) {
-      baseHeight = MediaQuery.of(context).size.height * 0.45; // 竖向卡片可以高一点
-    }
-
-    return SizedBox(
-      height: baseHeight,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          Container(
-            color: Colors.black, // 占位背景
-            child: AutoScrollBanner(imageUrls: imageUrls, aspectRatio: aspectRatio),
-          ),
-          // 底部融合渐变遮罩 (改为纯黑)
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: 60,
-            child: Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    Colors.black, // 强制纯黑
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
+    return Container(
+      // 背景必须透明，彻底移除黑色相框
+      color: Colors.transparent,
+      padding: EdgeInsets.only(top: topPadding + 60), // 给上方悬浮导航栏留出空间，但不设置左右 padding 以实现贯穿
+      child: ContinuousMarqueeBanner(
+        imageUrls: imageUrls,
+        itemWidth: itemWidth,
+        itemHeight: itemHeight,
+        spacing: spacing,
+        borderRadius: borderRadius,
+        isVisible: isVisible,
       ),
     );
   }

@@ -1,8 +1,10 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import '../theme/background_manager.dart';
 
 /// 极简美学：深空流光背景组件
-/// 提供一个极暗的彩色旋转扫光背景，用于替代枯燥的纯黑或纯白背景
+/// 使用 Fragment Shader 进行 GPU 硬件加速，通过 ValueNotifier 驱动局部重绘，彻底解放 CPU
 class AnimatedSpatialBackground extends StatefulWidget {
   final Widget child;
 
@@ -12,21 +14,32 @@ class AnimatedSpatialBackground extends StatefulWidget {
   State<AnimatedSpatialBackground> createState() => _AnimatedSpatialBackgroundState();
 }
 
-class _AnimatedSpatialBackgroundState extends State<AnimatedSpatialBackground> with SingleTickerProviderStateMixin {
-  late AnimationController _bgAnimationController;
-
+class _AnimatedSpatialBackgroundState extends State<AnimatedSpatialBackground> {
+  ui.FragmentProgram? _program;
+  
   @override
   void initState() {
     super.initState();
-    _bgAnimationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 15), // 15秒一个轮回，比之前更舒缓
-    )..repeat(reverse: true);
+    _loadShader();
+    BackgroundManager.instance.addSubscriber();
+  }
+
+  Future<void> _loadShader() async {
+    try {
+      final program = await ui.FragmentProgram.fromAsset('packages/core_design_system/shaders/aurora_flow.frag');
+      if (mounted) {
+        setState(() {
+          _program = program;
+        });
+      }
+    } catch (e) {
+      debugPrint('Shader load error: $e');
+    }
   }
 
   @override
   void dispose() {
-    _bgAnimationController.dispose();
+    BackgroundManager.instance.removeSubscriber();
     super.dispose();
   }
 
@@ -37,39 +50,48 @@ class _AnimatedSpatialBackgroundState extends State<AnimatedSpatialBackground> w
       builder: (context, bgType, _) {
         return Stack(
           children: [
-            // 根据全局设置渲染不同的底层背景
-            if (bgType == BackgroundType.dynamicAurora)
-              AnimatedBuilder(
-                animation: _bgAnimationController,
-                builder: (context, child) {
-                  return Container(
-                    decoration: BoxDecoration(
-                      gradient: SweepGradient(
-                        center: Alignment.center,
-                        colors: [
-                          Colors.black,
-                          const Color(0xFF2A0845).withValues(alpha: 0.5), // 深邃紫
-                          Colors.black,
-                          const Color(0xFF00416A).withValues(alpha: 0.5), // 深海蓝
-                          Colors.black,
-                          const Color(0xFF640D14).withValues(alpha: 0.5), // 猩红暗流
-                          Colors.black,
-                        ],
-                        stops: const [0.0, 0.16, 0.33, 0.5, 0.66, 0.83, 1.0],
-                        transform: GradientRotation(_bgAnimationController.value * 2 * 3.1415926),
-                      ),
-                    ),
-                  );
-                },
+            if (bgType == BackgroundType.dynamicAurora && _program != null)
+              SizedBox.expand(
+                child: RepaintBoundary( // 硬件图层隔离，防止其他组件的频繁重绘波及 Shader
+                  child: CustomPaint(
+                    // 将 Notifier 传入 Painter，实现真正的旁路渲染 (Bypass Rendering)
+                    painter: _AuroraShaderPainter(_program!, BackgroundManager.instance.globalTimeNotifier),
+                  ),
+                ),
               )
-            else if (bgType == BackgroundType.pureBlack)
+            else if (bgType == BackgroundType.pureBlack || _program == null)
               Container(color: Colors.black),
               
-            // 确保上层内容可以直接盖在流光上
             widget.child,
           ],
         );
       },
     );
+  }
+}
+
+class _AuroraShaderPainter extends CustomPainter {
+  final ui.FragmentProgram program;
+  final ValueNotifier<double> timeNotifier;
+
+  // 核心修复：将 timeNotifier 传给 super(repaint)，Flutter 会自动在数值改变时仅重绘此画布
+  _AuroraShaderPainter(this.program, this.timeNotifier) : super(repaint: timeNotifier);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final shader = program.fragmentShader();
+    // 注入 GLSL uniform 变量
+    shader.setFloat(0, size.width);
+    shader.setFloat(1, size.height);
+    shader.setFloat(2, timeNotifier.value);
+
+    final paint = Paint()..shader = shader;
+    canvas.drawRect(Offset.zero & size, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _AuroraShaderPainter oldDelegate) {
+    // 因为使用了 repaint 驱动，这里可以直接返回 false
+    return false;
   }
 }

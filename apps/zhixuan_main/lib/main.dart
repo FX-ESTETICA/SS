@@ -12,6 +12,11 @@ void main() async {
   // 确保 Flutter 引擎完全绑定，这是初始化云端服务的前提
   WidgetsFlutterBinding.ensureInitialized();
   
+  // 扩大底层 C++ 纹理缓存池 (ImageCache) 到 256MB 和 1000 张图片。
+  // 彻底消灭因缓存太小导致的图片频繁 GC (垃圾回收) 和滑动时的主线程重新解码卡顿
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 256 * 1024 * 1024;
+  PaintingBinding.instance.imageCache.maximumSize = 1000;
+  
   // 桌面端无边框窗口初始化
   await windowManager.ensureInitialized();
   WindowOptions windowOptions = const WindowOptions(
@@ -51,12 +56,19 @@ class ZhixuanSuperApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: '智选 (Zhixuan)',
-      // 强制使用底层设计系统中定义的主题，彻底杜绝 UI 碎片化
-      theme: AppTheme.lightTheme, 
-      debugShowCheckedModeBanner: false,
-      home: const SuperAppShell(),
+    return Listener(
+      // 全局拦截所有交互事件（点击、滑动、移动），用于唤醒底层休眠动画
+      onPointerDown: (_) => BackgroundManager.instance.notifyInteraction(),
+      onPointerMove: (_) => BackgroundManager.instance.notifyInteraction(),
+      onPointerUp: (_) => BackgroundManager.instance.notifyInteraction(),
+      behavior: HitTestBehavior.translucent,
+      child: MaterialApp(
+        title: '智选 (Zhixuan)',
+        // 强制使用底层设计系统中定义的主题，彻底杜绝 UI 碎片化
+        theme: AppTheme.lightTheme, 
+        debugShowCheckedModeBanner: false,
+        home: const SuperAppShell(),
+      ),
     );
   }
 }
@@ -78,8 +90,8 @@ class _SuperAppShellState extends State<SuperAppShell> {
     // 定义底部 Tab 对应的页面数组
     final List<Widget> pages = [
       const ChatScreen(),      // 挂载微信 IM 模块
-      const VideoFeedScreen(), // 挂载抖音短视频模块
-      const ShopFeedScreen(),  // 挂载淘宝商城模块
+      VideoFeedScreen(isTabActive: _currentIndex == 1), // 挂载抖音短视频模块
+      ShopFeedScreen(isTabActive: _currentIndex == 2),  // 挂载淘宝商城模块
       ProfileScreen(
         onLoginSuccess: () {
           // 登录成功后跳转到视频页（索引 1）

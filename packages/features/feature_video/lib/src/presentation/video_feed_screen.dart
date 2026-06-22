@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:core_design_system/core_design_system.dart';
 import 'package:core_network/core_network.dart'; // 引入云端服务
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import '../domain/video_engine_pool.dart'; // 引入底层引擎池
 
 /// 模拟从后端拉取的短视频数据模型
 class VideoModel {
@@ -24,7 +26,8 @@ class VideoModel {
 
 /// 抖音风格短视频瀑布流主页面
 class VideoFeedScreen extends StatefulWidget {
-  const VideoFeedScreen({super.key});
+  final bool isTabActive;
+  const VideoFeedScreen({super.key, this.isTabActive = true});
 
   @override
   State<VideoFeedScreen> createState() => _VideoFeedScreenState();
@@ -40,6 +43,9 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   @override
   void initState() {
     super.initState();
+    // 1. 初始化 C++ 引擎池
+    VideoEnginePool.instance.initialize();
+    
     _pageController = PageController();
     _fetchVideosFromCloud();
   }
@@ -52,6 +58,8 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
           _videos.addAll(data.map((e) => VideoModel.fromJson(e)).toList());
           _isLoading = false;
         });
+        // 数据到达后，将焦点锁定到索引 0，开始底层预加载
+        VideoEnginePool.instance.focusIndex(0, _videos.map((e) => e.url).toList());
       }
     } catch (e) {
       if (mounted) {
@@ -71,6 +79,20 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
           ]);
           _isLoading = false;
         });
+        VideoEnginePool.instance.focusIndex(0, _videos.map((e) => e.url).toList());
+      }
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant VideoFeedScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 如果 Tab 切换导致非激活，强制冻结所有 C++ 解码
+    if (oldWidget.isTabActive != widget.isTabActive) {
+      if (widget.isTabActive) {
+        VideoEnginePool.instance.focusIndex(_currentIndex, _videos.map((e) => e.url).toList());
+      } else {
+        VideoEnginePool.instance.freezeAll();
       }
     }
   }
@@ -78,6 +100,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   @override
   void dispose() {
     _pageController.dispose();
+    VideoEnginePool.instance.dispose();
     super.dispose();
   }
 
@@ -137,9 +160,13 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
               setState(() {
                 _currentIndex = index;
               });
+              // 将滑动焦点事件抛给底层 C++ 引擎池进行物理指针偏移
+              if (widget.isTabActive) {
+                VideoEnginePool.instance.focusIndex(index, _videos.map((e) => e.url).toList());
+              }
             },
             itemBuilder: (context, index) {
-              // 极限预加载：只保留当前、上一条、下一条实例，其余全部回收
+              // 极限预加载：只渲染当前和前后 1 个
               final bool isRendered = (index >= _currentIndex - 1 && index <= _currentIndex + 1);
               if (!isRendered) {
                 return const SizedBox();
@@ -147,7 +174,8 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
 
               return _VideoPlayerItem(
                 video: _videos[index],
-                isActive: index == _currentIndex,
+                index: index, // 传入实际索引
+                isActive: index == _currentIndex && widget.isTabActive,
               );
             },
           ),
@@ -174,110 +202,52 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   }
 }
 
-/// 单个视频播放组件
-class _VideoPlayerItem extends StatefulWidget {
+/// 极简无状态视频播放组件 (彻底接管自底层池)
+class _VideoPlayerItem extends StatelessWidget {
   final VideoModel video;
+  final int index;
   final bool isActive;
 
   const _VideoPlayerItem({
     required this.video,
+    required this.index,
     required this.isActive,
   });
 
   @override
-  State<_VideoPlayerItem> createState() => _VideoPlayerItemState();
-}
-
-class _VideoPlayerItemState extends State<_VideoPlayerItem> {
-  // 使用 C++ 顶级引擎 media_kit
-  late final Player _player;
-  late final VideoController _controller;
-  bool _isPlaying = true;
-
-  @override
-  void initState() {
-    super.initState();
-    // 实例化媒体播放器内核
-    _player = Player();
-    _controller = VideoController(_player);
-
-    // 【核心修复】：对于网络流，即使是 media_kit，也可能会因为网络 I/O 导致循环有轻微黑屏
-    // 要做到抖音那种绝对 0 缝隙，我们需要在内存级别将播放器强制锁定
-    // 我们在这里使用一种“软循环”技术配合底层 loop
-    _player.setPlaylistMode(PlaylistMode.none); // 关闭自带的 loop，因为它会触发重新 load 
-
-    _player.stream.position.listen((position) {
-      final duration = _player.state.duration;
-      // 当播放到距离结尾还剩 150 毫秒以内时，瞬间强行 Seek 回到 0
-      // 因为这个时候显存里其实还有最后几帧，这样可以做到绝对没有黑屏的物理回滚
-      if (duration.inMilliseconds > 0 && 
-          position.inMilliseconds >= duration.inMilliseconds - 150) {
-        _player.seek(Duration.zero);
-      }
-    });
-
-    // 预加载并根据激活状态决定是否立即播放
-    _player.open(Media(widget.video.url), play: widget.isActive);
-    _isPlaying = widget.isActive;
-  }
-
-  @override
-  void didUpdateWidget(covariant _VideoPlayerItem oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // 监听滑动状态变化：滑到该视频就播放，滑走就暂停（但保留在内存中供回滑秒开）
-    if (oldWidget.isActive != widget.isActive) {
-      if (widget.isActive) {
-        _player.play();
-        _isPlaying = true;
-      } else {
-        _player.pause();
-        _isPlaying = false;
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _player.dispose(); // 彻底释放底层 C++ 资源
-    super.dispose();
-  }
-
-  void _togglePlay() {
-    setState(() {
-      if (_isPlaying) {
-        _player.pause();
-        _isPlaying = false;
-      } else {
-        _player.play();
-        _isPlaying = true;
-      }
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
+    // 物理级映射：根据真实 index 获取底层被分配的 3 个常驻 C++ 引擎之一
+    final controller = VideoEnginePool.instance.getController(index);
+    final player = VideoEnginePool.instance.getPlayer(index);
+
     return GestureDetector(
-      onTap: _togglePlay, // 点击屏幕暂停/播放
+      onTap: () => VideoEnginePool.instance.togglePlay(index), // 点击屏幕暂停/播放
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // 1. 视频底层渲染 (0 毫秒首帧秒开)
+          // 1. 视频底层渲染 (Zero-copy 直出)
           SizedBox.expand(
             child: FittedBox(
               fit: BoxFit.cover, // 裁切适应全屏（抖音模式）
               child: SizedBox(
                 width: MediaQuery.of(context).size.width,
                 height: MediaQuery.of(context).size.height,
-                child: Video(controller: _controller),
+                child: Video(controller: controller),
               ),
             ),
           ),
 
-          // 2. 暂停图标蒙层
-          if (!_isPlaying)
-            const Center(
-              child: Icon(Icons.play_arrow, size: 80, color: Colors.white),
-            ),
+          // 2. 暂停图标蒙层 (通过 StreamBuilder 监听底层状态，不再需要 setState)
+          StreamBuilder<bool>(
+            stream: player.stream.playing,
+            builder: (context, snapshot) {
+              final isPlaying = snapshot.data ?? false;
+              if (isPlaying || !isActive) return const SizedBox();
+              return const Center(
+                child: Icon(Icons.play_arrow, size: 80, color: Colors.white),
+              );
+            },
+          ),
 
           // 3. 底部信息层 (作者、文案)
           Positioned(
@@ -288,12 +258,12 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  widget.video.authorName,
+                  video.authorName,
                   style: AppTypography.h1.copyWith(color: Colors.white, fontSize: 18),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  widget.video.description,
+                  video.description,
                   style: AppTypography.body.copyWith(color: Colors.white),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,

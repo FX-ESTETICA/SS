@@ -10,5 +10,10 @@ dependencies:
   flutter:
     sdk: flutter
 
+flutter:
+  shaders:
+    - shaders/aurora_flow.frag
+
+
 dev_dependencies:
   flutter_lints: ^3.0.0
