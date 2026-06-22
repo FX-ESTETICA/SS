@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:core_design_system/core_design_system.dart';
 import 'package:core_network/core_network.dart'; // 引入云端服务
-import 'package:video_player/video_player.dart';
-import 'package:video_player_win/video_player_win_plugin.dart'; // 添加这行
-import 'dart:io';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 /// 模拟从后端拉取的短视频数据模型
 class VideoModel {
@@ -36,14 +35,11 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   final List<VideoModel> _videos = [];
   bool _isLoading = true;
   String? _errorMessage;
+  int _currentIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    // 如果是 Windows 桌面端，显式注册播放器插件以防崩溃
-    if (Platform.isWindows) {
-      WindowsVideoPlayer.registerWith();
-    }
     _pageController = PageController();
     _fetchVideosFromCloud();
   }
@@ -137,8 +133,22 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
             controller: _pageController,
             scrollDirection: Axis.vertical, // 上下滑动
             itemCount: _videos.length,
+            onPageChanged: (index) {
+              setState(() {
+                _currentIndex = index;
+              });
+            },
             itemBuilder: (context, index) {
-              return _VideoPlayerItem(video: _videos[index]);
+              // 极限预加载：只保留当前、上一条、下一条实例，其余全部回收
+              final bool isRendered = (index >= _currentIndex - 1 && index <= _currentIndex + 1);
+              if (!isRendered) {
+                return const SizedBox();
+              }
+
+              return _VideoPlayerItem(
+                video: _videos[index],
+                isActive: index == _currentIndex,
+              );
             },
           ),
         ),
@@ -167,43 +177,78 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
 /// 单个视频播放组件
 class _VideoPlayerItem extends StatefulWidget {
   final VideoModel video;
+  final bool isActive;
 
-  const _VideoPlayerItem({required this.video});
+  const _VideoPlayerItem({
+    required this.video,
+    required this.isActive,
+  });
 
   @override
   State<_VideoPlayerItem> createState() => _VideoPlayerItemState();
 }
 
 class _VideoPlayerItemState extends State<_VideoPlayerItem> {
-  late VideoPlayerController _controller;
+  // 使用 C++ 顶级引擎 media_kit
+  late final Player _player;
+  late final VideoController _controller;
   bool _isPlaying = true;
 
   @override
   void initState() {
     super.initState();
-    // 初始化视频控制器
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.video.url))
-      ..initialize().then((_) {
-        // 确保第一帧加载完成后重建状态
-        setState(() {});
-        _controller.play();
-        _controller.setLooping(true);
-      });
+    // 实例化媒体播放器内核
+    _player = Player();
+    _controller = VideoController(_player);
+
+    // 【核心修复】：对于网络流，即使是 media_kit，也可能会因为网络 I/O 导致循环有轻微黑屏
+    // 要做到抖音那种绝对 0 缝隙，我们需要在内存级别将播放器强制锁定
+    // 我们在这里使用一种“软循环”技术配合底层 loop
+    _player.setPlaylistMode(PlaylistMode.none); // 关闭自带的 loop，因为它会触发重新 load 
+
+    _player.stream.position.listen((position) {
+      final duration = _player.state.duration;
+      // 当播放到距离结尾还剩 150 毫秒以内时，瞬间强行 Seek 回到 0
+      // 因为这个时候显存里其实还有最后几帧，这样可以做到绝对没有黑屏的物理回滚
+      if (duration.inMilliseconds > 0 && 
+          position.inMilliseconds >= duration.inMilliseconds - 150) {
+        _player.seek(Duration.zero);
+      }
+    });
+
+    // 预加载并根据激活状态决定是否立即播放
+    _player.open(Media(widget.video.url), play: widget.isActive);
+    _isPlaying = widget.isActive;
+  }
+
+  @override
+  void didUpdateWidget(covariant _VideoPlayerItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 监听滑动状态变化：滑到该视频就播放，滑走就暂停（但保留在内存中供回滑秒开）
+    if (oldWidget.isActive != widget.isActive) {
+      if (widget.isActive) {
+        _player.play();
+        _isPlaying = true;
+      } else {
+        _player.pause();
+        _isPlaying = false;
+      }
+    }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _player.dispose(); // 彻底释放底层 C++ 资源
     super.dispose();
   }
 
   void _togglePlay() {
     setState(() {
-      if (_controller.value.isPlaying) {
-        _controller.pause();
+      if (_isPlaying) {
+        _player.pause();
         _isPlaying = false;
       } else {
-        _controller.play();
+        _player.play();
         _isPlaying = true;
       }
     });
@@ -216,21 +261,17 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // 1. 视频底层渲染
-          _controller.value.isInitialized
-              ? SizedBox.expand(
-                  child: FittedBox(
-                    fit: BoxFit.cover, // 裁切适应全屏（抖音模式）
-                    child: SizedBox(
-                      width: _controller.value.size.width,
-                      height: _controller.value.size.height,
-                      child: VideoPlayer(_controller),
-                    ),
-                  ),
-                )
-              : const Center(
-                  child: CircularProgressIndicator(color: AppColors.primary),
-                ),
+          // 1. 视频底层渲染 (0 毫秒首帧秒开)
+          SizedBox.expand(
+            child: FittedBox(
+              fit: BoxFit.cover, // 裁切适应全屏（抖音模式）
+              child: SizedBox(
+                width: MediaQuery.of(context).size.width,
+                height: MediaQuery.of(context).size.height,
+                child: Video(controller: _controller),
+              ),
+            ),
+          ),
 
           // 2. 暂停图标蒙层
           if (!_isPlaying)

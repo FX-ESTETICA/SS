@@ -5,10 +5,14 @@ import 'package:feature_video/feature_video.dart';
 import 'package:feature_shop/feature_shop.dart';
 import 'package:feature_im/feature_im.dart';
 import 'package:feature_profile/feature_profile.dart';
+import 'package:media_kit/media_kit.dart'; // 引入顶级播放器引擎
 
 void main() async {
   // 确保 Flutter 引擎完全绑定，这是初始化云端服务的前提
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 0. 初始化全局视频 C++ 引擎 (必须在 App 启动的最早期)
+  MediaKit.ensureInitialized();
 
   // 1. 初始化全球云端引擎 (Supabase)
   // 使用您专属的意大利节点项目密钥，正式接管云端！

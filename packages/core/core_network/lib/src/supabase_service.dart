@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// 全局 Supabase 云端服务中枢
@@ -36,7 +37,17 @@ class SupabaseService {
 
   /// 邮箱密码注册
   Future<AuthResponse> signUpWithEmailPassword(String email, String password) async {
-    return await client.auth.signUp(email: email, password: password);
+    // 注册生成 9 位随机 ID，保存到 metadata
+    final randomId = (100000000 + math.Random().nextInt(900000000)).toString();
+    return await client.auth.signUp(
+      email: email, 
+      password: password,
+      data: {
+        'display_name': email.split('@').first,
+        'user_id_9': randomId,
+        'avatar_url': 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
+      }
+    );
   }
 
   /// 邮箱密码登录
@@ -47,6 +58,11 @@ class SupabaseService {
   /// 退出登录
   Future<void> signOut() async {
     await client.auth.signOut();
+  }
+
+  /// 更新用户资料 (如头像、昵称)
+  Future<UserResponse> updateUserMetadata(Map<String, dynamic> metadata) async {
+    return await client.auth.updateUser(UserAttributes(data: metadata));
   }
 
   /// 2. 视频流获取：从云端数据库中查询视频列表

@@ -53,8 +53,8 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
 
     try {
       // 1. 获取用户在时间轴上截取的起止时间 (秒)
-      final double start = _controller.minTrim; // video_editor 返回的直接是 double 类型的比例/秒数
-      final double end = _controller.maxTrim;
+      final double start = _controller.startTrim.inMilliseconds / 1000.0;
+      final double end = _controller.endTrim.inMilliseconds / 1000.0;
       final double duration = end - start;
       
       // 2. 获取用户选定的封面所在秒数
@@ -65,8 +65,9 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
       // 3. 调用我们封装的底层 C++/FFmpeg 引擎进行硬件转码
       final result = await VideoProcessor.transcodeAndExtractCover(
         sourcePath: widget.file.path,
+        startTimeSeconds: start,
         coverTimeSeconds: coverTime,
-        maxDurationSeconds: duration.toInt(), // 实际截取的长度 (最大15s)
+        maxDurationSeconds: duration.toInt() == 0 ? 1 : duration.toInt(), // 实际截取的长度 (最大15s)
       );
 
       if (result != null) {
@@ -229,6 +230,7 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
           const Text('截取 15 秒', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
           GestureDetector(
             onTap: _isExporting ? null : _exportVideo,
+            behavior: HitTestBehavior.opaque,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               decoration: BoxDecoration(

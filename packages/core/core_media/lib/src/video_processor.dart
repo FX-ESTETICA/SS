@@ -15,10 +15,12 @@ class VideoProcessResult {
 class VideoProcessor {
   /// 将用户选定的视频进行极限压缩，转码为 H.264，并抽取指定时间点的封面
   /// [sourcePath]: 原始视频路径 (可能是从 video_editor 截取后传过来的中间路径)
+  /// [startTimeSeconds]: 截取开始时间
   /// [coverTimeSeconds]: 用户选定作为封面的时间点
   /// [maxDurationSeconds]: 强制限制最大时长 (默认 15)
   static Future<VideoProcessResult?> transcodeAndExtractCover({
     required String sourcePath,
+    double startTimeSeconds = 0.0,
     double coverTimeSeconds = 0.0,
     int maxDurationSeconds = 15,
   }) async {
@@ -29,12 +31,13 @@ class VideoProcessor {
     final targetCoverPath = '${tempDir.path}/${timestamp}_cover.webp';
 
     // 1. FFmpeg 命令构建：强制转码 H.264，限制时长，压榨体积
+    // -ss : 跳转到指定截取开始时间
     // -t 15 : 强制最大 15 秒
     // -vf scale=-2:720 : 动态缩放，高度限制为 720p，宽度自动对齐
     // -c:v libx264 : 使用 H.264 编码 (保证全平台兼容)
     // -crf 28 : 控制画质和体积平衡，数字越大体积越小画质越低
     // -preset veryfast : 转码速度优先
-    final videoCmd = '-i "$sourcePath" -t $maxDurationSeconds -vf scale=-2:720 -c:v libx264 -crf 28 -preset veryfast -c:a aac -b:a 128k "$targetVideoPath"';
+    final videoCmd = '-ss $startTimeSeconds -i "$sourcePath" -t $maxDurationSeconds -vf scale=-2:720 -c:v libx264 -crf 28 -preset veryfast -c:a aac -b:a 128k "$targetVideoPath"';
     
     // 执行视频转码
     FFmpegSession videoSession = await FFmpegKit.execute(videoCmd);

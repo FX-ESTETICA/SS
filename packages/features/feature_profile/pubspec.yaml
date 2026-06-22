@@ -14,9 +14,12 @@ dependencies:
     path: ../../core/core_design_system
   core_network:
     path: ../../core/core_network
+  core_media:
+    path: ../../core/core_media
   
   # UI 辅助依赖
   cached_network_image: ^3.3.1
+  image_picker: ^1.1.2
   intl: ^0.19.0
 
 dev_dependencies:

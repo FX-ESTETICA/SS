@@ -340,60 +340,97 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
 
   /// 动态分发不同的内容布局
   Widget _buildContentSliver() {
-    switch (_selectedMainCategoryIndex) {
-      case 0: // 商店 (横向16:9)
-        return SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) => _buildStoreCard(_products[index]),
-            childCount: _products.length,
+    if (_products.isEmpty) {
+      return const SliverToBoxAdapter(
+        child: Padding(
+          padding: EdgeInsets.only(top: 100),
+          child: Center(
+            child: Text('暂无相关商品', style: AppTypography.body),
           ),
-        );
-      case 1: // 商城 (竖向3:4/9:16)
-        return SliverPadding(
-          padding: const EdgeInsets.only(left: 8, right: 8, top: 8, bottom: 100),
-          sliver: SliverMasonryGrid.count(
-            crossAxisCount: 2,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-            childCount: _products.length,
-            itemBuilder: (context, index) {
-              return _buildMallCard(_products[index]);
-            },
-          ),
-        );
-      case 2: // 生活 (58同城类，服务卡片)
-        return SliverPadding(
-          padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 100),
-          sliver: SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) => _buildLifeCard(_products[index]),
-              childCount: _products.length,
-            ),
-          ),
-        );
-      default:
-        return const SliverToBoxAdapter(child: SizedBox());
+        ),
+      );
     }
+
+    return SliverLayoutBuilder(
+      builder: (context, constraints) {
+        int crossAxisCount = 2;
+        if (constraints.crossAxisExtent > 1200) {
+          crossAxisCount = 5;
+        } else if (constraints.crossAxisExtent > 800) {
+          crossAxisCount = 4;
+        } else if (constraints.crossAxisExtent > 600) {
+          crossAxisCount = 3;
+        }
+
+        switch (_selectedMainCategoryIndex) {
+          case 0: // 商店 (横向16:9)
+            return SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) => _buildStoreCard(_products[index]),
+                childCount: _products.length,
+              ),
+            );
+          case 1: // 商城 (竖向3:4/9:16)
+            return SliverPadding(
+              padding: const EdgeInsets.only(left: 8, right: 8, top: 8, bottom: 100),
+              sliver: SliverMasonryGrid.count(
+                crossAxisCount: crossAxisCount,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childCount: _products.length,
+                itemBuilder: (context, index) {
+                  return _buildMallCard(_products[index]);
+                },
+              ),
+            );
+          case 2: // 生活 (58同城类，服务卡片)
+            return SliverPadding(
+              padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 100),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) => _buildLifeCard(_products[index]),
+                  childCount: _products.length,
+                ),
+              ),
+            );
+          default:
+            return const SliverToBoxAdapter(child: SizedBox());
+        }
+      },
+    );
   }
 
   /// 骨架屏 (Skeleton) 渲染 Sliver 版本
   Widget _buildSkeletonSliver() {
-    return SliverMasonryGrid.count(
-      crossAxisCount: 2,
-      mainAxisSpacing: 8,
-      crossAxisSpacing: 8,
-      childCount: 6,
-      itemBuilder: (context, index) {
-        return Shimmer.fromColors(
-          baseColor: Colors.grey[300]!,
-          highlightColor: Colors.grey[100]!,
-          child: Container(
-            height: index % 2 == 0 ? 250 : 300,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-            ),
-          ),
+    return SliverLayoutBuilder(
+      builder: (context, constraints) {
+        int crossAxisCount = 2;
+        if (constraints.crossAxisExtent > 1200) {
+          crossAxisCount = 5;
+        } else if (constraints.crossAxisExtent > 800) {
+          crossAxisCount = 4;
+        } else if (constraints.crossAxisExtent > 600) {
+          crossAxisCount = 3;
+        }
+
+        return SliverMasonryGrid.count(
+          crossAxisCount: crossAxisCount,
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          childCount: 6,
+          itemBuilder: (context, index) {
+            return Shimmer.fromColors(
+              baseColor: Colors.grey[300]!,
+              highlightColor: Colors.grey[100]!,
+              child: Container(
+                height: index % 2 == 0 ? 250 : 300,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+            );
+          },
         );
       },
     );
