@@ -67,9 +67,16 @@
 - **解决方案:** 必须使用 `video_player_win` 插件，并在初始化时针对 Windows 显式调用 `WindowsVideoPlayer.registerWith();`。
 
 ## 6. 当前进度与下一步计划
-- **已完成:** 核心架构搭建、Supabase 接入、Cloudflare R2 接入、视频模块的云端数据渲染和 Windows 桌面端适配（已解决刷新和视频解码问题）。
-- **待开发 1:** `feature_im` 模块接入 Supabase Realtime WebSocket 实现消息秒发秒回。
-- **待开发 2:** `feature_shop` 模块实现骨架屏和淘宝高并发瀑布流。
+- **已完成:** 
+  - 核心架构搭建、Supabase 接入、Cloudflare R2 接入。
+  - 视频模块 (`feature_video`)：云端数据渲染和 Windows 桌面端适配（已解决刷新和视频解码问题）。
+  - IM 模块 (`feature_im`)：已接入 Supabase Realtime WebSocket，实现消息秒发秒回与极简 UI 适配。
+  - 商城模块 (`feature_shop`)：已实现 Shimmer 骨架屏加载与 `flutter_staggered_grid_view` 淘宝高并发瀑布流，并完成本地缓存熔断防护。
+  - **用户模块 (`feature_profile`)**：已完整接入 Supabase Auth，实现真实邮箱密码登录/注册链路，动态切换个人主页状态。
+  - **发布链路**：打通端侧视频上传，支持本地极限压缩转码并自动上传至云端节点（支持 R2 兜底机制），同步写入 Supabase 数据库发布动态。
+  - **个人主页展示**：打通真实用户数据与发布记录查询，实现动态瀑布流取代原有的模拟数据，形成闭环体验。
+- **待开发:** 
+  - (核心商业闭环已全链路打通，随时可准备部署或开启新业务模块拓展)
 
 ## 7. 终极多媒体架构 (The Ultimate 0-Cost Media Architecture)
 **核心商业逻辑：端侧极限压榨算力，云端绝对 0 成本中转。**

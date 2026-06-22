@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:video_editor/video_editor.dart';
 import 'package:core_media/core_media.dart'; // 引入我们刚才写的底层处理引擎
 
+import 'package:core_network/core_network.dart';
+
 /// 15秒时间轴截取与转码编辑器
 class VideoEditorScreen extends StatefulWidget {
   final File file;
@@ -68,14 +70,37 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
       );
 
       if (result != null) {
-        // 转码成功，拿到了极限压缩的 .mp4 和 高清 .webp 封面
-        // 接下来就可以直接把这两个 File 上传到 Cloudflare R2 了！
         setState(() {
-          _exportStatus = '转码成功！\n视频大小已极限压缩\n封面已抽取';
+          _exportStatus = '转码成功！正在上传至云端节点...';
         });
         
-        // 演示用：等待2秒后返回
-        await Future.delayed(const Duration(seconds: 2));
+        // 1. 读取视频文件字节
+        final videoBytes = await result.videoFile.readAsBytes();
+        final fileName = 'video_${DateTime.now().millisecondsSinceEpoch}.mp4';
+        
+        // 2. 上传至 R2 存储
+        final videoUrl = await SupabaseService.instance.uploadMedia(fileName, videoBytes);
+        
+        setState(() {
+          _exportStatus = '上传完成，正在发布动态...';
+        });
+
+        // 3. 写入 Supabase 数据库
+        final user = SupabaseService.instance.currentUser;
+        final authorName = user?.email?.split('@').first ?? '@匿名极客';
+        
+        await SupabaseService.instance.publishVideo(
+          videoUrl: videoUrl,
+          description: '刚刚通过智选超级 APP 极限压缩上传了这条视频！🚀',
+          authorName: authorName,
+        );
+
+        setState(() {
+          _exportStatus = '发布成功！';
+        });
+        
+        // 等待1秒后返回
+        await Future.delayed(const Duration(seconds: 1));
         if (mounted) {
           Navigator.pop(context); // 返回上一页
         }

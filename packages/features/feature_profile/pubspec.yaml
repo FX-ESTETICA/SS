@@ -18,7 +18,6 @@ dependencies:
   # UI 辅助依赖
   cached_network_image: ^3.3.1
   intl: ^0.19.0
-  pinput: ^4.0.0
 
 dev_dependencies:
   flutter_test:

@@ -1,8 +1,9 @@
 import 'dart:math' as math;
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:pinput/pinput.dart';
 import 'package:core_design_system/core_design_system.dart';
+
+import 'package:core_network/core_network.dart';
 
 /// 真正的十二星座几何连线图绘制器 (Constellation Art)
 class ZodiacConstellationPainter extends CustomPainter {
@@ -164,16 +165,59 @@ class ConstellationBorderPainter extends CustomPainter {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
-  bool _showOtpInput = false;
+  bool _showPasswordInput = false;
   final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
   final ScrollController _feedScrollController = ScrollController();
   Timer? _autoScrollTimer;
+  StreamSubscription? _authSubscription;
+  bool _isLoggingIn = false;
+  List<Map<String, dynamic>> _myVideos = [];
+  bool _isLoadingVideos = false;
 
   @override
   void initState() {
     super.initState();
-    // 启动横向视频流的无限自动滑动
-    _startAutoScroll();
+    
+    // 监听全局登录状态变化
+    _authSubscription = SupabaseService.instance.onAuthStateChange.listen((data) {
+      if (mounted) {
+        setState(() {}); // 刷新 UI
+        if (_checkIsLoggedIn()) {
+          _fetchMyVideos();
+        }
+      }
+    });
+
+    if (_checkIsLoggedIn()) {
+      _fetchMyVideos();
+    }
+  }
+
+  Future<void> _fetchMyVideos() async {
+    setState(() {
+      _isLoadingVideos = true;
+    });
+    try {
+      final user = SupabaseService.instance.currentUser;
+      final authorName = user?.email?.split('@').first ?? '';
+      if (authorName.isNotEmpty) {
+        final videos = await SupabaseService.instance.fetchMyVideos(authorName);
+        if (mounted) {
+          setState(() {
+            _myVideos = videos;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('获取我的视频失败: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingVideos = false;
+        });
+      }
+    }
   }
 
   void _startAutoScroll() {
@@ -195,11 +239,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     _autoScrollTimer?.cancel();
     _feedScrollController.dispose();
     _emailController.dispose();
+    _passwordController.dispose();
+    _authSubscription?.cancel();
     super.dispose();
   }
 
-  // 模拟当前是否已登录的状态，测试登录后的“我的页”效果请将此改为 true
-  bool _checkIsLoggedIn() => true;
+  // 检查是否已登录 (真实连接 Supabase Auth)
+  bool _checkIsLoggedIn() => SupabaseService.instance.currentSession != null;
 
   @override
   Widget build(BuildContext context) {
@@ -249,7 +295,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 ),
               );
             },
-            child: _showOtpInput ? _buildOtpSection() : _buildEmailAndThirdPartySection(),
+            child: _showPasswordInput ? _buildPasswordSection() : _buildEmailAndThirdPartySection(),
           ),
           const SizedBox(height: 40),
         ],
@@ -353,7 +399,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         const SizedBox(height: 8),
         // 问候语
         Text(
-          isLoggedIn ? '晚上好，Sarah！' : '欢迎，请登录',
+          isLoggedIn ? '晚上好，${SupabaseService.instance.currentUser?.email?.split('@').first ?? ''}！' : '欢迎，请登录',
           style: const TextStyle(
             color: Colors.white,
             fontSize: 28,
@@ -439,15 +485,18 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
   /// 登录后的名字与个性签名
   Widget _buildUserInfo() {
+    final user = SupabaseService.instance.currentUser;
+    final userName = user?.email?.split('@').first ?? '匿名极客';
+    
     return Column(
       children: [
         // 名字
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Text(
-              'Sarah',
-              style: TextStyle(
+            Text(
+              userName,
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 32,
                 fontWeight: FontWeight.w900,
@@ -472,17 +521,37 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  /// 底部内容流（横向无限自动滑动的视觉展示）
+  /// 底部内容流（展示用户发布的视频）
   Widget _buildContentFeed() {
+    if (_isLoadingVideos) {
+      return const SizedBox(
+        height: 240,
+        child: Center(child: CircularProgressIndicator(color: Colors.white)),
+      );
+    }
+
+    if (_myVideos.isEmpty) {
+      return const SizedBox(
+        height: 240,
+        child: Center(
+          child: Text('暂无发布动态\n点击底部 "+" 号发布第一条短视频吧', 
+            textAlign: TextAlign.center, 
+            style: TextStyle(color: Colors.white54, height: 1.5)
+          ),
+        ),
+      );
+    }
+
     return SizedBox(
       height: 240, // 横向滑动内容的高度
       child: ListView.builder(
         controller: _feedScrollController,
         scrollDirection: Axis.horizontal,
-        itemCount: 1000, // 足够大的数量实现“无限”滑动错觉
+        itemCount: _myVideos.length, 
         itemBuilder: (context, index) {
-          // 模拟视频封面，使用真实的不同图片
-          final realIndex = index % 12;
+          final video = _myVideos[index];
+          // 如果没有专门的封面图，我们就用视频链接假装一下（在真实业务中需要展示封面）
+          // 由于我们已经有了视频，这里可以使用视频组件或封面组件
           return Container(
             width: 160,
             margin: const EdgeInsets.only(right: 2), // 极窄边距
@@ -490,21 +559,39 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             child: Stack(
               fit: StackFit.expand,
               children: [
-                Image.network(
-                  'https://images.unsplash.com/photo-${1500000000000 + realIndex}?auto=format&fit=crop&w=200&q=80',
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(color: Colors.white10),
+                // 暂时用占位符展示，因为我们的极速压缩只上传了视频文件，在云端还没有配专门的图片字段，或者你可以用 R2 里的占位图
+                Container(
+                  color: Colors.black,
+                  child: const Center(
+                    child: Icon(Icons.video_library_outlined, color: Colors.white24, size: 48),
+                  ),
                 ),
-                // 播放图标和数据
+                // 底部信息遮罩
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 60,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.transparent, Colors.black.withValues(alpha: 0.8)],
+                      ),
+                    ),
+                  ),
+                ),
+                // 描述信息
                 Positioned(
                   bottom: 8,
                   left: 8,
-                  child: Row(
-                    children: [
-                      const Icon(Icons.play_arrow_outlined, color: Colors.white, size: 16),
-                      const SizedBox(width: 4),
-                      Text('${realIndex + 1}w', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                    ],
+                  right: 8,
+                  child: Text(
+                    video['description'] ?? '', 
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
@@ -611,14 +698,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     return ListTile(
       leading: Icon(icon, color: color),
       title: Text(title, style: TextStyle(color: color, fontSize: 16)),
-      onTap: () {
+      onTap: () async {
         Navigator.pop(context);
-        // 如果是退出，就切回未登录状态
+        // 如果是退出，调用真实的退出逻辑
         if (title == '退出账号') {
-          setState(() {
-            // 这里因为我们是用 _checkIsLoggedIn 模拟的，实际中这里应该是清除本地 Token 的逻辑
-            // 为了演示效果，可以在实际开发中动态切换
-          });
+          await SupabaseService.instance.signOut();
         }
       },
     );
@@ -667,7 +751,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   onPressed: () {
                     if (_emailController.text.isNotEmpty) {
                       setState(() {
-                        _showOtpInput = true; // 切换到验证码视图
+                        _showPasswordInput = true; // 切换到密码视图
                       });
                     }
                   },
@@ -705,55 +789,108 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  /// 验证码输入框（点击获取验证码后显示，替代前面的区域）
-  Widget _buildOtpSection() {
-    final defaultPinTheme = PinTheme(
-      width: 50,
-      height: 56,
-      textStyle: const TextStyle(fontSize: 24, color: Colors.white, fontWeight: FontWeight.bold),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
-    );
-
+  /// 密码输入与登录/注册操作
+  Widget _buildPasswordSection() {
     return Column(
-      key: const ValueKey('OtpSection'),
+      key: const ValueKey('PasswordSection'),
       children: [
         Text(
-          '验证码已发送至\n${_emailController.text}',
+          '欢迎回来\n${_emailController.text}',
           textAlign: TextAlign.center,
           style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.5),
         ),
         const SizedBox(height: 24),
-        // 6 位数验证码输入框
-        Pinput(
-          length: 6,
-          defaultPinTheme: defaultPinTheme,
-          focusedPinTheme: defaultPinTheme.copyWith(
-            decoration: defaultPinTheme.decoration!.copyWith(
-              border: Border.all(color: Colors.blueAccent),
-            ),
+        // 密码输入框
+        Container(
+          height: 56,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
           ),
-          onCompleted: (pin) {
-            // 验证码输入完成，触发登录成功回调，进入视频页
-            if (widget.onLoginSuccess != null) {
-              widget.onLoginSuccess!();
-            }
-          },
+          padding: const EdgeInsets.only(left: 20, right: 6),
+          child: Row(
+            children: [
+              const Icon(Icons.lock_outline, color: Colors.white54, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: _passwordController,
+                  obscureText: true,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    hintText: '请输入密码',
+                    hintStyle: TextStyle(color: Colors.white38, fontSize: 14),
+                    border: InputBorder.none,
+                  ),
+                ),
+              ),
+              // 登录按钮
+              _isLoggingIn 
+                ? const Padding(
+                    padding: EdgeInsets.all(12.0),
+                    child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
+                  )
+                : Container(
+                    width: 44,
+                    height: 44,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                    child: IconButton(
+                      icon: const Icon(Icons.arrow_forward, color: Colors.black, size: 20),
+                      onPressed: _performLoginOrRegister,
+                    ),
+                  ),
+            ],
+          ),
         ),
         const SizedBox(height: 32),
         TextButton(
           onPressed: () {
             setState(() {
-              _showOtpInput = false; // 返回修改邮箱
+              _showPasswordInput = false; // 返回修改邮箱
             });
           },
           child: const Text('修改邮箱地址', style: TextStyle(color: Colors.white54)),
         ),
       ],
     );
+  }
+
+  Future<void> _performLoginOrRegister() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+    if (email.isEmpty || password.isEmpty) return;
+
+    setState(() { _isLoggingIn = true; });
+
+    try {
+      // 尝试登录
+      await SupabaseService.instance.signInWithEmailPassword(email, password);
+      if (mounted && widget.onLoginSuccess != null) {
+        widget.onLoginSuccess!();
+      }
+    } catch (e) {
+      // 如果登录失败，尝试直接作为新用户注册
+      try {
+        await SupabaseService.instance.signUpWithEmailPassword(email, password);
+        if (mounted && widget.onLoginSuccess != null) {
+          widget.onLoginSuccess!();
+        }
+      } catch (signUpError) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('登录/注册失败: ${signUpError.toString()}')),
+          );
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() { _isLoggingIn = false; });
+      }
+    }
   }
 
   /// 小型化第三方按钮
