@@ -50,13 +50,15 @@
 - **问题:** Windows Web 引擎 (CanvasKit/HTML) 无法承载视频解码器和复杂缓存图片的高性能渲染。
 - **解决方案:** 开发和预览**必须**使用原生的 Windows 桌面级应用程序进行编译 (`flutter run -d windows`)。
 
-### 🚨 坑点 2: Windows 编译缓存导致 UI 死活不更新 / LNK1168
-- **问题:** 修改代码后，即使 `taskkill` 杀掉进程重新 `flutter run`，界面依然是旧的。这是因为 Windows 下 CMake/Ninja 增量编译缓存损坏，导致一直复用旧的 `.exe`。
-- **终极解决方案 (AI 全权接管):** 绝对不能只杀进程！必须执行“核弹级”清理：
-  1. `taskkill /F /IM zhixuan_main.exe`
-  2. `cd apps/zhixuan_main && flutter clean` (必须清空 build 缓存！)
-  3. `flutter pub get`
-  4. 重新 `flutter run -d windows`
+### 🚨 坑点 2: Windows 编译缓存导致 UI 死活不更新 / LNK1168 / 构建卡死
+- **问题:** 修改代码后，即使 `taskkill` 杀掉进程重新 `flutter run`，界面依然是旧的。或者因为修改代码引入了错误导致编译彻底卡死。这是因为 Windows 下 CMake/Ninja 增量编译缓存损坏，或者某些后台进程 (dart.exe) 锁死了文件。
+- **终极解决方案 (AI 全权接管，必须遵循以下步骤):** 
+  绝对不能只杀进程！为了确保 100% 能打开最新应用并且不再重复等待，必须执行以下“终极核弹级”清理（顺序绝不能错）：
+  1. 彻底杀掉所有可能锁死文件的进程：`taskkill /F /IM zhixuan_main.exe; taskkill /F /IM dart.exe; taskkill /F /IM flutter.bat` （这一步非常关键，很多时候是后台残留的 dart 进程锁死了 build 文件夹导致 `flutter clean` 失败）
+  2. `cd apps/zhixuan_main`
+  3. 执行 `flutter clean` (必须清空 build 缓存！)
+  4. 执行 `flutter pub get`
+  5. 重新执行 `flutter run -d windows`
 
 ### 🚨 坑点 3: 桌面端布局约束异常 (RenderBox was not laid out)
 - **问题:** 在 IM 聊天框等场景中，`TextField` 设置了 `maxLines: null` 且被包裹在 `Expanded` 中，Web/桌面端由于屏幕无边界，导致原生 C++ 渲染引擎内存溢出自毁。

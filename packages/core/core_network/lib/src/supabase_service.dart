@@ -46,7 +46,7 @@ class SupabaseService {
         'display_name': email.split('@').first,
         'user_id_9': randomId,
         'avatar_url': 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
-      }
+      },
     );
   }
 
@@ -161,6 +161,7 @@ class SupabaseService {
       rethrow;
     }
   }
+
   /// 6. IM 实时监听：WebSocket 订阅新消息
   SupabaseStreamBuilder listenToMessages() {
     // 监听 messages 表的所有 INSERT 事件

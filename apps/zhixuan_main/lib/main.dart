@@ -6,10 +6,26 @@ import 'package:feature_shop/feature_shop.dart';
 import 'package:feature_im/feature_im.dart';
 import 'package:feature_profile/feature_profile.dart';
 import 'package:media_kit/media_kit.dart'; // 引入顶级播放器引擎
+import 'package:window_manager/window_manager.dart';
 
 void main() async {
   // 确保 Flutter 引擎完全绑定，这是初始化云端服务的前提
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // 桌面端无边框窗口初始化
+  await windowManager.ensureInitialized();
+  WindowOptions windowOptions = const WindowOptions(
+    size: Size(1280, 720),
+    minimumSize: Size(800, 600),
+    center: true,
+    backgroundColor: Colors.transparent,
+    skipTaskbar: false,
+    titleBarStyle: TitleBarStyle.hidden, // 隐藏原生白色标题栏
+  );
+  windowManager.waitUntilReadyToShow(windowOptions, () async {
+    await windowManager.show();
+    await windowManager.focus();
+  });
 
   // 0. 初始化全局视频 C++ 引擎 (必须在 App 启动的最早期)
   MediaKit.ensureInitialized();
@@ -74,14 +90,27 @@ class _SuperAppShellState extends State<SuperAppShell> {
 
     return Scaffold(
       extendBody: true, // 允许 body 延伸到底部导航栏下方
-      // 沉浸式页面（商城、短视频和个人中心）不需要 AppBar
-      appBar: (_currentIndex == 1 || _currentIndex == 2 || _currentIndex == 3)
-          ? null 
-          : AppBar(title: const Text('智选', style: AppTypography.h1)),
-      // 使用 IndexedStack 保持页面状态（比如刷视频切到消息，切回来视频还在继续播）
-      body: IndexedStack(
-        index: _currentIndex,
-        children: pages,
+      // 彻底移除原生 AppBar，实现绝对沉浸
+      appBar: null,
+      // 使用 IndexedStack 保持页面状态，并在最顶层悬浮覆盖无边框窗口控制栏
+      body: Stack(
+        children: [
+          IndexedStack(
+            index: _currentIndex,
+            children: pages,
+          ),
+          // 悬浮在壁纸最上方的自定义窗口控制栏
+          const Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 40,
+            child: WindowCaption(
+              brightness: Brightness.dark, // 强制按钮图标为纯白色
+              backgroundColor: Colors.transparent, // 绝对透明，融入底层流光
+            ),
+          ),
+        ],
       ),
       // 中间的发布按钮 (绝对居中悬浮)
       floatingActionButton: _currentIndex == 1 ? FloatingActionButton(

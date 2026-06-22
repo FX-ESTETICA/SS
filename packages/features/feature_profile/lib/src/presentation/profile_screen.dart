@@ -222,19 +222,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     }
   }
 
-  void _startAutoScroll() {
-    _autoScrollTimer = Timer.periodic(const Duration(milliseconds: 40), (timer) {
-      if (_feedScrollController.hasClients) {
-        final maxScroll = _feedScrollController.position.maxScrollExtent;
-        final currentScroll = _feedScrollController.offset;
-        if (currentScroll < maxScroll) {
-          _feedScrollController.jumpTo(currentScroll + 1.0); // 极度平滑的偏移
-        } else {
-          _feedScrollController.jumpTo(0); // 触底回滚
-        }
-      }
-    });
-  }
+  // 暂时移除未使用的 _startAutoScroll
 
   @override
   void dispose() {
@@ -328,9 +316,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           ),
         ),
 
-        // 右上角悬浮设置按钮
+        // 右上角悬浮设置按钮 (向下偏移，避开窗口控制栏)
         Positioned(
-          top: 16,
+          top: 40, // 增加 top 偏移，避开 40px 高度的 WindowCaption
           right: 16,
           child: IconButton(
             icon: const Icon(Icons.settings_outlined, color: Colors.white, size: 28),
@@ -499,6 +487,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       final pickedFile = await picker.pickImage(source: ImageSource.gallery);
       if (pickedFile == null) return;
 
+      if (!mounted) return;
       // 调用 core_media 极致压缩
       final compressedFile = await ImageProcessor.cropAndCompress(
         sourcePath: pickedFile.path,
@@ -635,7 +624,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         child: Center(
           child: Text('暂无发布动态\n点击底部 "+" 号发布第一条短视频吧', 
             textAlign: TextAlign.center, 
-            style: TextStyle(color: Colors.white54, height: 1.5)
+            style: TextStyle(color: Colors.white54, height: 1.5),
           ),
         ),
       );
@@ -778,6 +767,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       },
     );
   }
+
 
   Widget _buildThemeOption(String title, BackgroundType type, BackgroundType currentType) {
     final isSelected = currentType == type;

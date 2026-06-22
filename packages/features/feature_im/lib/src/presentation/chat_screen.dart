@@ -145,11 +145,19 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent, // 导航栏透明
         elevation: 0,
-        title: const Text('架构师 (在线)', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+        // 增加顶部边距，避开 40px 高度的 WindowCaption，实现全页面的同步下移
+        toolbarHeight: kToolbarHeight + 32,
+        title: const Padding(
+          padding: EdgeInsets.only(top: 32.0),
+          child: Text('架构师 (在线)', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+        ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.more_horiz, color: Colors.white),
-            onPressed: () {},
+          Padding(
+            padding: const EdgeInsets.only(top: 32.0),
+            child: IconButton(
+              icon: const Icon(Icons.more_horiz, color: Colors.white),
+              onPressed: () {},
+            ),
           ),
         ],
       ),

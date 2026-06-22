@@ -156,7 +156,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
         // 顶部容错提示条
         if (_errorMessage != null)
           Positioned(
-            top: 40,
+            top: 40, // 已经在 40，刚好避开 WindowCaption
             left: 0,
             right: 0,
             child: Container(
