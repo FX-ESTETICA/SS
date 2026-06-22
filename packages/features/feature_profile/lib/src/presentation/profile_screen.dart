@@ -426,7 +426,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text('双子座', style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 13, letterSpacing: 2)),
+                  const Text('双子座', style: TextStyle(color: Colors.white, fontSize: 13, letterSpacing: 2, fontWeight: FontWeight.w300)),
                 ],
               ),
             ),
@@ -471,7 +471,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 children: [
                   const Text('生活', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 2)),
                   const SizedBox(height: 8),
-                  Text('ID: $userId9', style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13, letterSpacing: 1)),
+                  Text('ID: $userId9', style: const TextStyle(color: Colors.white, fontSize: 13, letterSpacing: 1, fontWeight: FontWeight.w300)),
                 ],
               ),
             ),
@@ -552,9 +552,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         const Text(
           '“今天又是充满代码的一天...”',
           style: TextStyle(
-            color: Colors.white70,
+            color: Colors.white,
             fontSize: 14,
             fontStyle: FontStyle.italic,
+            fontWeight: FontWeight.w300,
           ),
         ),
       ],
@@ -624,7 +625,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         child: Center(
           child: Text('暂无发布动态\n点击底部 "+" 号发布第一条短视频吧', 
             textAlign: TextAlign.center, 
-            style: TextStyle(color: Colors.white54, height: 1.5),
+            style: TextStyle(color: Colors.white, height: 1.5, fontWeight: FontWeight.w300),
           ),
         ),
       );
@@ -651,7 +652,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 Container(
                   color: Colors.black,
                   child: const Center(
-                    child: Icon(Icons.video_library_outlined, color: Colors.white24, size: 48),
+                    child: Icon(Icons.video_library_outlined, color: Colors.white, size: 48),
                   ),
                 ),
                 // 底部信息遮罩
@@ -730,7 +731,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   const Divider(color: Colors.white10, height: 32),
                   _buildSettingsItem('退出账号', Icons.logout, color: Colors.redAccent),
                   const SizedBox(height: 16),
-                  _buildSettingsItem('注销账号', Icons.delete_forever, color: Colors.white38),
+                  _buildSettingsItem('注销账号', Icons.delete_forever, color: Colors.white),
                 ],
               ),
             ),
@@ -758,7 +759,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           children: [
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-              child: Text('背景主题', style: TextStyle(color: Colors.white54, fontSize: 12)),
+              child: Text('背景主题', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w300)),
             ),
             _buildThemeOption('极简纯黑', BackgroundType.pureBlack, currentType),
             _buildThemeOption('动态流光', BackgroundType.dynamicAurora, currentType),
@@ -774,9 +775,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     return ListTile(
       leading: Icon(
         isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-        color: isSelected ? Colors.white : Colors.white54,
+        color: Colors.white,
       ),
-      title: Text(title, style: TextStyle(color: isSelected ? Colors.white : Colors.white54, fontSize: 16)),
+      title: Text(title, style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: isSelected ? FontWeight.bold : FontWeight.w300)),
       onTap: () {
         BackgroundManager.instance.setBackground(type);
       },

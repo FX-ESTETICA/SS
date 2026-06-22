@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' as ui; // 引入底层绘制引擎
 import 'package:flutter/material.dart';
 import 'package:core_design_system/core_design_system.dart';
 import 'package:core_network/core_network.dart';
@@ -274,16 +273,16 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
                         border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
                       ),
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Row(
+                      child: const Row(
                         children: [
-                          const Icon(Icons.search, color: Colors.white, size: 20),
-                          const SizedBox(width: 8),
+                          Icon(Icons.search, color: Colors.white, size: 20),
+                          SizedBox(width: 8),
                           Expanded(
                             child: TextField(
-                              style: const TextStyle(color: Colors.white),
+                              style: TextStyle(color: Colors.white),
                               decoration: InputDecoration(
                                 hintText: '搜索全网低价好物...',
-                                hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+                                hintStyle: TextStyle(color: Colors.white, fontWeight: FontWeight.w300),
                                 border: InputBorder.none,
                               ),
                             ),
@@ -528,7 +527,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
                       Expanded(
                         child: Text(
                           product.shopName,
-                          style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13), // 纯白透明度
+                          style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w300), // 纯白，通过粗细区分
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -681,9 +680,9 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
                         Row(
                           children: [
                             const Icon(Icons.star, color: Colors.white, size: 14), // 强制纯白
-                            Text(' 4.9', style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12)),
+                            const Text(' 4.9', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w300)),
                             const SizedBox(width: 8),
-                            Text('已服务 ${product.salesCount} 次', style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12)),
+                            Text('已服务 ${product.salesCount} 次', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w300)),
                           ],
                         ),
                       ],
@@ -828,7 +827,7 @@ class _AutoScrollBannerState extends State<AutoScrollBanner> {
                 placeholder: (context, url) => Container(color: Colors.grey[900]), 
                 errorWidget: (context, url, error) => Container(
                   color: Colors.grey[900], 
-                  child: const Center(child: Icon(Icons.broken_image, color: Colors.white54)),
+                  child: const Center(child: Icon(Icons.broken_image_outlined, color: Colors.white)),
                 ),
               ),
             ),
@@ -844,7 +843,6 @@ class _HeroBannerContent extends StatelessWidget {
   final int categoryIndex;
 
   _HeroBannerContent({
-    super.key,
     required this.categoryIndex,
   });
 

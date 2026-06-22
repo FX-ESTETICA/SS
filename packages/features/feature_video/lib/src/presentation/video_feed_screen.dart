@@ -276,7 +276,7 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
           // 2. 暂停图标蒙层
           if (!_isPlaying)
             const Center(
-              child: Icon(Icons.play_arrow, size: 80, color: Colors.white54),
+              child: Icon(Icons.play_arrow, size: 80, color: Colors.white),
             ),
 
           // 3. 底部信息层 (作者、文案)

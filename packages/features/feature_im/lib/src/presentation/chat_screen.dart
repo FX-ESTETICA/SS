@@ -294,12 +294,12 @@ class _ChatScreenState extends State<ChatScreen> {
                   textInputAction: TextInputAction.send,
                   onSubmitted: (_) => _sendMessage(),
                   style: const TextStyle(color: Colors.white), // 输入文字纯白
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                     border: InputBorder.none,
                     hintText: '发送消息...',
-                    hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)), // 占位符暗白
+                    hintStyle: TextStyle(color: Colors.white, fontWeight: FontWeight.w300), // 占位符暗白
                   ),
                 ),
               ),
