@@ -79,6 +79,16 @@ class _SuperAppShellState extends State<SuperAppShell> {
         index: _currentIndex,
         children: pages,
       ),
+      // 中间的发布按钮 (绝对居中悬浮)
+      floatingActionButton: _currentIndex == 1 ? FloatingActionButton(
+        backgroundColor: Colors.white,
+        onPressed: () {
+          // 跳转到短视频上传入口
+          Navigator.push(context, MaterialPageRoute(builder: (context) => const VideoUploadScreen()));
+        },
+        child: const Icon(Icons.add, color: Colors.black, size: 32),
+      ) : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       bottomNavigationBar: Theme(
         data: Theme.of(context).copyWith(
           splashColor: Colors.transparent, // 移除点击水波纹

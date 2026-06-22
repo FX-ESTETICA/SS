@@ -17,6 +17,8 @@ dependencies:
     path: ../../packages/core/core_design_system
   core_local_db:
     path: ../../packages/core/core_local_db
+  core_media:
+    path: ../../packages/core/core_media
   feature_video:
     path: ../../packages/features/feature_video
   feature_shop:

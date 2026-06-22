@@ -9,11 +9,18 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  # 核心依赖：设计系统与网络
+  
+  # 核心依赖
   core_design_system:
     path: ../../core/core_design_system
   core_network:
     path: ../../core/core_network
+  core_media:
+    path: ../../core/core_media
+    
+  # 视频处理相关 UI (依赖必须在当前包也声明，因为直接使用了它们的 Widget)
+  image_picker: ^1.1.2
+  video_editor: ^3.0.0
   
   # 视频播放器 (官方极速版)
   video_player: ^2.8.2

@@ -227,7 +227,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     color: Colors.white.withValues(alpha: 0.1), // 白色气泡微微发光
                     blurRadius: 10,
                     offset: const Offset(0, 4),
-                  )
+                  ),
                 ] : null,
               ),
               child: Text(

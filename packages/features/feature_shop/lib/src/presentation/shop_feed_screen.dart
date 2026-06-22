@@ -4,9 +4,11 @@ import 'package:core_network/core_network.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'product_detail_screen.dart'; // 引入详情页
 
 /// 商品数据模型
 class ProductModel {
+  final String? id;
   final String title;
   final String imageUrl;
   final double price;
@@ -14,6 +16,7 @@ class ProductModel {
   final String shopName;
 
   ProductModel({
+    this.id,
     required this.title,
     required this.imageUrl,
     required this.price,
@@ -23,6 +26,7 @@ class ProductModel {
 
   factory ProductModel.fromJson(Map<String, dynamic> json) {
     return ProductModel(
+      id: json['id']?.toString(),
       title: json['title'] ?? '',
       imageUrl: json['image_url'] ?? '',
       price: (json['price'] as num?)?.toDouble() ?? 0.0,
@@ -396,28 +400,35 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
   }
   /// 1. 商店卡片：横向 16:9 比例，沉浸式信息覆盖
   Widget _buildStoreCard(ProductModel product) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: AspectRatio(
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _navigateToDetail(product),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 10,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: AspectRatio(
         aspectRatio: 16 / 9, // 完美横向比例
         child: Stack(
           fit: StackFit.expand,
           children: [
             // 背景大图
-            CachedNetworkImage(
-              imageUrl: product.imageUrl,
-              fit: BoxFit.cover,
+            Hero(
+              tag: 'product_image_${product.id ?? product.imageUrl}',
+              child: CachedNetworkImage(
+                imageUrl: product.imageUrl,
+                fit: BoxFit.cover,
+                memCacheWidth: 800, // 强制内存熔断，防止高清大图撑爆内存 (16:9 适合 800px 宽度)
+              ),
             ),
             // 沉浸式渐变遮罩 (底部)
             Positioned(
@@ -476,6 +487,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
             ),
           ],
         ),
+        ),
       ),
     );
   }
@@ -484,19 +496,26 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
   Widget _buildMallCard(ProductModel product) {
     // 模拟 3:4 和 9:16 的错落感
     final isTall = product.imageUrl.hashCode % 2 == 0;
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: AspectRatio(
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _navigateToDetail(product),
+      child: Container(
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: AspectRatio(
         aspectRatio: isTall ? 9 / 16 : 3 / 4,
         child: Stack(
           fit: StackFit.expand,
           children: [
-            CachedNetworkImage(
-              imageUrl: product.imageUrl,
-              fit: BoxFit.cover,
+            Hero(
+              tag: 'product_image_${product.id ?? product.imageUrl}',
+              child: CachedNetworkImage(
+                imageUrl: product.imageUrl,
+                fit: BoxFit.cover,
+                memCacheWidth: 400, // 强制内存熔断，瀑布流卡片仅需 400px 宽度
+              ),
             ),
             // 渐变遮罩
             Positioned(
@@ -544,28 +563,36 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
             ),
           ],
         ),
+        ),
       ),
     );
   }
 
   /// 3. 生活卡片：58同城类服务，沉浸式信息覆盖
   Widget _buildLifeCard(ProductModel product) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: AspectRatio(
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _navigateToDetail(product),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: AspectRatio(
         aspectRatio: 21 / 9, // 更扁长的服务卡片
         child: Stack(
           fit: StackFit.expand,
           children: [
-            CachedNetworkImage(
+            Hero(
+            tag: 'product_image_${product.id ?? product.imageUrl}',
+            child: CachedNetworkImage(
               imageUrl: product.imageUrl,
               fit: BoxFit.cover,
+              memCacheWidth: 600, // 强制内存熔断
             ),
-            // 全局微弱黑色遮罩 + 底部强遮罩
+          ),
+          // 全局微弱黑色遮罩 + 底部强遮罩
             Container(color: Colors.black.withValues(alpha: 0.2)),
             Positioned(
               left: 0,
@@ -624,6 +651,23 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
             ),
           ],
         ),
+        ),
+      ),
+    );
+  }
+
+  void _navigateToDetail(ProductModel product) {
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 500),
+        reverseTransitionDuration: const Duration(milliseconds: 400),
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return FadeTransition(
+            opacity: animation,
+            child: ProductDetailScreen(product: product),
+          );
+        },
       ),
     );
   }
@@ -663,6 +707,7 @@ class _HeroBannerDelegate extends SliverPersistentHeaderDelegate {
               // 这里用一张高质感的图片代替视频作为示例，实际可替换为 video_player
               imageUrl: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&q=80&w=1920',
               fit: BoxFit.cover,
+              memCacheWidth: 1080, // 广告位保留较高清晰度
             ),
           ),
         ),
@@ -715,7 +760,7 @@ class _StickySubCategoryHeaderDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
-    final double alpha = (shrinkOffset / maxExtent).clamp(0.0, 1.0);
+    // final double alpha = (shrinkOffset / maxExtent).clamp(0.0, 1.0); // 暂不使用
     
     // 定义选中(实心)和未选中(线框)两套图标
     final List<IconData> outlinedIcons;

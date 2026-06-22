@@ -1,0 +1,24 @@
+name: core_media
+description: Ultimate edge-computing media processing module for image/video compression and WYSIWYG cropping.
+version: 0.0.1
+publish_to: 'none'
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # 图片处理
+  image_picker: ^1.1.2       # 基础媒体选择
+  image_cropper: ^8.0.2      # 沉浸式端侧裁剪
+  flutter_image_compress: ^2.4.0 # 端侧极限压缩 (WebP, C++ 底层)
+  # 视频处理
+  video_player: ^2.8.6       # 视频预览
+  video_editor: ^3.0.0       # 15秒时间轴与截取
+  ffmpeg_kit_flutter_min_gpl: ^6.0.3 # 硬件转码与封面抽帧
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
