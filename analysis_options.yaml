@@ -1,0 +1,20 @@
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    # 强制顶级架构的代码规范（杜绝屎山代码）
+    - always_declare_return_types
+    - cancel_subscriptions
+    - close_sinks
+    - avoid_print # 生产环境严禁 print，必须使用专业 logger
+    - prefer_single_quotes
+    - sort_child_properties_last
+    - require_trailing_commas
+
+analyzer:
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+  errors:
+    missing_required_param: error
+    missing_return: error

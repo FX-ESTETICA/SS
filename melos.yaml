@@ -1,0 +1,22 @@
+name: zhixuan_super_app
+repository: https://github.com/your-repo/zhixuan_super_app
+
+packages:
+  - "apps/**"
+  - "packages/core/**"
+  - "packages/features/**"
+
+command:
+  bootstrap:
+    usePubspecOverrides: true
+
+scripts:
+  lint:all:
+    run: melos exec -c 1 -- "dart analyze ."
+    description: Run dart analyze in all packages.
+  test:all:
+    run: melos exec -c 1 -- "flutter test"
+    description: Run all flutter tests in all packages.
+  build:apk:
+    run: melos exec -c 1 --scope="*app*" -- "flutter build apk --release --split-per-abi"
+    description: Build Android APK with split-per-abi for minimum size.

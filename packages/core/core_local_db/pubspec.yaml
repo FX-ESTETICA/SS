@@ -1,0 +1,15 @@
+name: core_local_db
+description: Local Database for offline storage and IM chat history
+version: 0.0.1
+publish_to: 'none'
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # 未来将在这里引入 Isar 或 Drift 数据库引擎
+  
+dev_dependencies:
+  flutter_lints: ^3.0.0

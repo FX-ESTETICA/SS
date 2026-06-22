@@ -1,0 +1,10 @@
+name: zhixuan_super_app_root
+description: The root workspace for Zhixuan Super App
+publish_to: 'none'
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dev_dependencies:
+  melos: ^5.2.0
+  flutter_lints: ^3.0.0

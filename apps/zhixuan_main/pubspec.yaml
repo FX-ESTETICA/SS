@@ -1,0 +1,33 @@
+name: zhixuan_main
+description: The main entry point for Zhixuan Super App.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.3 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # 注入核心基础设施模块
+  core_network:
+    path: ../../packages/core/core_network
+  core_design_system:
+    path: ../../packages/core/core_design_system
+  core_local_db:
+    path: ../../packages/core/core_local_db
+  feature_video:
+    path: ../../packages/features/feature_video
+  feature_shop:
+    path: ../../packages/features/feature_shop
+  feature_im:
+    path: ../../packages/features/feature_im
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

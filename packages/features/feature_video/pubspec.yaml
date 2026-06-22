@@ -1,0 +1,25 @@
+name: feature_video
+description: TikTok-style short video module for Zhixuan Super App
+version: 0.0.1
+publish_to: 'none'
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # 核心依赖：设计系统与网络
+  core_design_system:
+    path: ../../core/core_design_system
+  core_network:
+    path: ../../core/core_network
+  
+  # 视频播放器 (官方极速版)
+  video_player: ^2.8.2
+  video_player_win: ^3.2.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0

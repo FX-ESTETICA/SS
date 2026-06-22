@@ -1,0 +1,14 @@
+name: core_design_system
+description: The core UI design system for Zhixuan Super App
+version: 0.0.1
+publish_to: 'none'
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_lints: ^3.0.0

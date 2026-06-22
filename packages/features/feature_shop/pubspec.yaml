@@ -1,0 +1,28 @@
+name: feature_shop
+description: Taobao-style e-commerce module for Zhixuan Super App
+version: 0.0.1
+publish_to: 'none'
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # 核心依赖：设计系统与网络
+  core_design_system:
+    path: ../../core/core_design_system
+  core_network:
+    path: ../../core/core_network
+  
+  # 降维打击：瀑布流高性能渲染组件
+  flutter_staggered_grid_view: ^0.7.0
+  # 降维打击：骨架屏极速加载体验
+  shimmer: ^3.0.0
+  # 图片网络缓存
+  cached_network_image: ^3.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0

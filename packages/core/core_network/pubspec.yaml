@@ -1,0 +1,15 @@
+name: core_network
+description: The core network infrastructure for Zhixuan Super App
+version: 0.0.1
+publish_to: 'none'
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  dio: ^5.4.0
+  fpdart: ^1.1.0 # 顶级架构必备：函数式错误处理，防止崩溃
+  supabase_flutter: ^2.4.0 # 接入全球最顶级的开源 Serverless 后端
+
+dev_dependencies:
+  flutter_lints: ^3.0.0
