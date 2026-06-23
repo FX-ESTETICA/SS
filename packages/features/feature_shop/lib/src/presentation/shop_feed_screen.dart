@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:core_design_system/core_design_system.dart';
 import 'package:core_network/core_network.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
@@ -51,13 +50,11 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
   final List<ProductModel> _products = [];
   bool _isLoading = true;
   String? _errorMessage;
-  bool _isSearchExpanded = false;
   final ScrollController _scrollController = ScrollController();
   bool _isBannerVisible = true; // 新增：视口裁剪标志
   
   // 0: 商店 (横向16:9), 1: 商城 (竖向瀑布流), 2: 生活 (服务卡片)
   int _selectedMainCategoryIndex = 1;
-  int _selectedSubCategoryIndex = 0;
 
   @override
   void initState() {
@@ -132,61 +129,16 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
     return Scaffold(
       backgroundColor: Colors.transparent, // 必须透明以露出全局流光
       body: AnimatedSpatialBackground(
-        child: _buildBody(), // 移除 Stack，完全由 _buildBody 的 CustomScrollView 接管滚动
+        child: _buildBody(), // 完全由 _buildBody 的 CustomScrollView 接管滚动
       ),
     );
   }
 
-  // （已删除 _buildFloatingHeader() 方法，并入 _buildFloatingHeaderContent）
+  // （已删除悬浮功能区，整合到全新的横向 Header 中）
+  
+  // （已删除 _buildFloatingHeader() 和 _buildFloatingHeaderContent() 方法）
 
-  Widget _buildMainCategoryItem(String title, int index) {
-    final isSelected = _selectedMainCategoryIndex == index;
-    return GestureDetector(
-      onTap: () => setState(() {
-        _selectedMainCategoryIndex = index;
-        _selectedSubCategoryIndex = 0; // 重置小分类索引
-      }),
-      behavior: HitTestBehavior.opaque,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: isSelected ? 20 : 16,
-              fontWeight: isSelected ? FontWeight.w900 : FontWeight.w500,
-              color: Colors.white, // 强制纯白，移除 Colors.white70
-              shadows: [
-                Shadow(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  offset: const Offset(0, 1),
-                  blurRadius: 4,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 6),
-          // 选中状态的底部小白条
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            height: 3,
-            width: isSelected ? 16 : 0,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(1.5),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.3),
-                  blurRadius: 2,
-                  offset: const Offset(0, 1),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // （已删除未使用的 _buildMainCategoryItem 方法）
 
   Widget _buildBody() {
     return LayoutBuilder(
@@ -202,13 +154,6 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
           crossAxisCount = 3;
         }
 
-        int storeLifeCrossAxisCount = 1; // 商店与生活
-        if (screenWidth > 1200) {
-          storeLifeCrossAxisCount = 4; // 宽屏下一行放 4 个
-        } else if (screenWidth > 800) {
-          storeLifeCrossAxisCount = 2;
-        }
-
         double itemWidth;
         double itemHeight;
         double spacing;
@@ -219,7 +164,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
           spacing = 16.0;
           paddingHorizontal = 16.0;
           borderRadius = 16.0;
-          itemWidth = (screenWidth - paddingHorizontal * 2 - (storeLifeCrossAxisCount - 1) * spacing) / storeLifeCrossAxisCount;
+          itemWidth = (screenWidth - paddingHorizontal * 2 - (crossAxisCount - 1) * spacing) / crossAxisCount;
           itemHeight = itemWidth / (16 / 9);
         } else if (_selectedMainCategoryIndex == 1) { // 商城
           spacing = 8.0;
@@ -231,7 +176,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
           spacing = 16.0;
           paddingHorizontal = 16.0;
           borderRadius = 16.0;
-          itemWidth = (screenWidth - paddingHorizontal * 2 - (storeLifeCrossAxisCount - 1) * spacing) / storeLifeCrossAxisCount;
+          itemWidth = (screenWidth - paddingHorizontal * 2 - (crossAxisCount - 1) * spacing) / crossAxisCount;
           itemHeight = itemWidth / (21 / 9);
         }
 
@@ -244,175 +189,48 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
           // ignore: deprecated_member_use
           cacheExtent: 2500, 
           slivers: [
-            // 沉浸式头部区域：广告传送带置顶，且贯穿左右边缘；导航栏悬浮其上
+            // 沉浸式头部区域：广告传送带完全置顶
             SliverToBoxAdapter(
-              child: Stack(
-                children: [
-                  _HeroBannerContent(
-                    categoryIndex: _selectedMainCategoryIndex,
-                    itemWidth: itemWidth,
-                    itemHeight: itemHeight,
-                    spacing: spacing,
-                    borderRadius: borderRadius,
-                    isVisible: _isBannerVisible && widget.isTabActive,
-                  ),
-                  _buildFloatingHeaderContent(),
-                ],
+              child: _HeroBannerContent(
+                categoryIndex: _selectedMainCategoryIndex,
+                itemWidth: itemWidth,
+                itemHeight: itemHeight,
+                spacing: spacing,
+                borderRadius: borderRadius,
+                isVisible: _isBannerVisible && widget.isTabActive,
               ),
             ),
             
-            // 小分类导航 (跟随滚动)
+            // 全新的大分类切换器与动态搜索框
             SliverToBoxAdapter(
-              child: SizedBox(
-                height: 140,
-                child: _SubCategoryHeaderContent(
-                  mainCategoryIndex: _selectedMainCategoryIndex,
-                  selectedIndex: _selectedSubCategoryIndex,
-                  onChanged: (index) {
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
+                child: _MainCategorySelectorAndSearch(
+                  selectedIndex: _selectedMainCategoryIndex,
+                  onTap: () {
                     setState(() {
-                      _selectedSubCategoryIndex = index;
+                      _selectedMainCategoryIndex = (_selectedMainCategoryIndex + 1) % 3;
                     });
                   },
                 ),
               ),
             ),
 
-            // 根据选中的大分类渲染不同的商品流
+            // 横向浏览的子分类内容区
             if (_isLoading)
               _buildSkeletonSliver(crossAxisCount)
             else if (_errorMessage != null)
               SliverToBoxAdapter(child: Center(child: Text(_errorMessage!, style: AppTypography.body)))
             else
-              _buildContentSliver(crossAxisCount, storeLifeCrossAxisCount),
+              _buildHorizontalRowsSliver(),
           ],
         );
       },
     );
   }
 
-  /// 原本悬浮的导航栏内容，现在作为普通的滚动内容
-  Widget _buildFloatingHeaderContent() {
-    final topPadding = MediaQuery.of(context).padding.top;
-    return Container(
-      padding: EdgeInsets.only(top: topPadding + 32, bottom: 16), // 增加基础 topPadding，避开 40px 高度的 WindowCaption
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Colors.black.withValues(alpha: 0.7),
-            Colors.transparent,
-          ],
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 第一行：左侧定位 / 搜索框，右侧按钮
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: AnimatedCrossFade(
-                    duration: const Duration(milliseconds: 300),
-                    crossFadeState: _isSearchExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-                    firstChild: Row(
-                      children: [
-                        const Icon(Icons.location_on, color: Colors.white, size: 20),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Rapallo', // 极简单图标+定位文字
-                          style: AppTypography.body.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            shadows: [
-                              Shadow(
-                                offset: const Offset(0, 1),
-                                blurRadius: 3.0,
-                                color: Colors.black.withValues(alpha: 0.5),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    secondChild: Container(
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.search, color: Colors.white, size: 20),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              style: TextStyle(color: Colors.white),
-                              decoration: InputDecoration(
-                                hintText: '搜索全网低价好物...',
-                                hintStyle: TextStyle(color: Colors.white, fontWeight: FontWeight.w300),
-                                border: InputBorder.none,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _isSearchExpanded = !_isSearchExpanded;
-                    });
-                  },
-                  child: Container(
-                    width: 32, // 稍微缩小点击区域
-                    height: 32,
-                    color: Colors.transparent, // 彻底去除圆形背景，仅保留透明点击区域
-                    alignment: Alignment.centerRight,
-                    child: Icon(
-                      _isSearchExpanded ? Icons.close : Icons.search,
-                      color: Colors.white, // 强制纯白，因为没有背景了
-                      size: 24, // 放大一点图标以补偿背景的缺失
-                      shadows: [
-                        Shadow(
-                          color: Colors.black.withValues(alpha: 0.5),
-                          offset: const Offset(0, 1),
-                          blurRadius: 3,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12), // 极大地缩小与下方大分类的间距
-          // 第二行：大分类居中显示
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _buildMainCategoryItem('商店', 0),
-              const SizedBox(width: 32),
-              _buildMainCategoryItem('商城', 1),
-              const SizedBox(width: 32),
-              _buildMainCategoryItem('生活', 2),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 动态分发不同的内容布局
-  Widget _buildContentSliver(int crossAxisCount, int storeLifeCrossAxisCount) {
+  /// 动态分发全新的横向列表内容
+  Widget _buildHorizontalRowsSliver() {
     if (_products.isEmpty) {
       return const SliverToBoxAdapter(
         child: Padding(
@@ -424,58 +242,101 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
       );
     }
 
-    switch (_selectedMainCategoryIndex) {
-      case 0: // 商店 (横向16:9)
-        return SliverPadding(
-          padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 100),
-          sliver: SliverGrid(
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: storeLifeCrossAxisCount,
-              mainAxisSpacing: 16,
-              crossAxisSpacing: 16,
-              childAspectRatio: 16 / 9,
-            ),
-            delegate: SliverChildBuilderDelegate(
-              (context, index) => _buildStoreCard(_products[index]),
-              childCount: _products.length,
-            ),
-          ),
-        );
-      case 1: // 商城 (竖向尺寸一致)
-        return SliverPadding(
-          padding: const EdgeInsets.only(left: 8, right: 8, top: 8, bottom: 100),
-          sliver: SliverGrid(
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: crossAxisCount,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-              childAspectRatio: 3 / 4,
-            ),
-            delegate: SliverChildBuilderDelegate(
-              (context, index) => _buildMallCard(_products[index]),
-              childCount: _products.length,
-            ),
-          ),
-        );
-      case 2: // 生活 (58同城类，服务卡片)
-        return SliverPadding(
-          padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 100),
-          sliver: SliverGrid(
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: storeLifeCrossAxisCount,
-              mainAxisSpacing: 16,
-              crossAxisSpacing: 16,
-              childAspectRatio: 21 / 9,
-            ),
-            delegate: SliverChildBuilderDelegate(
-              (context, index) => _buildLifeCard(_products[index]),
-              childCount: _products.length,
-            ),
-          ),
-        );
-      default:
-        return const SliverToBoxAdapter(child: SizedBox());
+    // 获取当前大分类下的子分类名称
+    List<String> subCategories;
+    if (_selectedMainCategoryIndex == 0) {
+      subCategories = ['综合商店', '网红餐饮', '精品咖啡', '深夜酒吧'];
+    } else if (_selectedMainCategoryIndex == 1) {
+      subCategories = ['为你推荐', '数码极客', '潮流服饰', '品质家居'];
+    } else {
+      subCategories = ['附近服务', '上门保洁', '家电维修', '同城搬家'];
     }
+
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) {
+          final categoryName = subCategories[index];
+          // 为每个子分类打乱并取部分商品模拟数据，展示出差异感
+          final items = [..._products]..shuffle();
+          final rowItems = items.take(6).toList();
+
+          return _buildHorizontalRow(categoryName, rowItems);
+        },
+        childCount: subCategories.length,
+      ),
+    );
+  }
+
+  Widget _buildHorizontalRow(String title, List<ProductModel> items) {
+    // 动态卡片宽度与高度
+    final double cardWidth = _selectedMainCategoryIndex == 1 ? 160 : 280;
+    final double listHeight = _selectedMainCategoryIndex == 1 ? 220 : 160;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0), // 移除多余的 bottom 参数
+          child: Text(
+            title,
+            style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+        ),
+        const SizedBox(height: 12.0), // 用 SizedBox 替代 bottom padding
+        SizedBox(
+          height: listHeight,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            itemCount: items.length + 1, // +1 for the "全部" button
+            itemBuilder: (context, index) {
+              if (index == items.length) {
+                // 最右侧的“全部”按钮
+                return _buildSeeAllButton(listHeight);
+              }
+              final product = items[index];
+              return Container(
+                width: cardWidth,
+                margin: const EdgeInsets.only(right: 12.0),
+                child: _selectedMainCategoryIndex == 0 
+                    ? _buildStoreCard(product) 
+                    : (_selectedMainCategoryIndex == 1 ? _buildMallCard(product) : _buildLifeCard(product)),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 32), // 行间距
+      ],
+    );
+  }
+
+  Widget _buildSeeAllButton(double height) {
+    return Container(
+      width: 80, // 稍微宽一点，让按钮更饱满
+      height: height, // 确保高度匹配
+      margin: const EdgeInsets.only(right: 16.0), // 留出最右侧呼吸空间
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05), // 极微弱背景
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)), // 极细边框
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white,
+            ),
+            child: const Icon(Icons.arrow_forward_ios, color: Colors.black, size: 16),
+          ),
+          const SizedBox(height: 12),
+          const Text('全部', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
   }
 
   /// 骨架屏 (Skeleton) 渲染 Sliver 版本
@@ -785,37 +646,35 @@ class ContinuousMarqueeBanner extends StatefulWidget {
 }
 
 class _ContinuousMarqueeBannerState extends State<ContinuousMarqueeBanner> with SingleTickerProviderStateMixin {
-  late final Ticker _ticker;
-  final ValueNotifier<double> _scrollNotifier = ValueNotifier(0.0);
+  late final AnimationController _controller;
 
   @override
   void initState() {
     super.initState();
-    // 使用一个独立的极低频 Ticker (30fps)，与全局背景解绑，保证视觉上的持续反馈
-    _ticker = createTicker((elapsed) {
-      if (!widget.isVisible) return;
-      // 速度控制：每毫秒移动的像素量 (大约 60像素/秒)
-      _scrollNotifier.value = elapsed.inMilliseconds * 0.06;
-    });
+    // 【终极方案】：放弃手动计算时间差，直接使用 Flutter 底层极其成熟的 AnimationController
+    // 它可以完美对齐 VSync，并由引擎在底层进行最平滑的插值计算，拒绝任何手工计算导致的微小撕裂
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 20), // 初始给个默认值，build 中会根据真实宽度动态计算
+    );
     if (widget.isVisible) {
-      _ticker.start();
+      _controller.repeat();
     }
   }
 
   @override
   void didUpdateWidget(ContinuousMarqueeBanner oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isVisible && !_ticker.isActive) {
-      _ticker.start();
-    } else if (!widget.isVisible && _ticker.isActive) {
-      _ticker.stop();
+    if (widget.isVisible && !_controller.isAnimating) {
+      _controller.repeat();
+    } else if (!widget.isVisible && _controller.isAnimating) {
+      _controller.stop();
     }
   }
 
   @override
   void dispose() {
-    _ticker.dispose();
-    _scrollNotifier.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
@@ -835,13 +694,21 @@ class _ContinuousMarqueeBannerState extends State<ContinuousMarqueeBanner> with 
     final int n = displayUrls.length;
     final double totalWidth = n * totalItemWidth;
 
+    // 动态计算 duration：比如设定移动速度为 50 像素/秒
+    // 这样不管屏幕多宽、图片多少，移动速度永远恒定
+    final int durationMs = (totalWidth / 50.0 * 1000).toInt();
+    _controller.duration = Duration(milliseconds: durationMs);
+
     return SizedBox(
       height: widget.itemHeight,
       width: double.infinity, // 强制撑满全宽
       child: ClipRect( // 裁剪掉溢出的部分
-        child: ValueListenableBuilder<double>(
-          valueListenable: _scrollNotifier,
-          builder: (context, scrollOffset, child) {
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            // _controller.value 在 0.0 到 1.0 之间随 VSync 匀速变化
+            final double scrollOffset = _controller.value * totalWidth;
+
             return Stack(
               clipBehavior: Clip.none, // 允许子元素溢出 Stack
               children: List.generate(n, (i) {
@@ -853,7 +720,8 @@ class _ContinuousMarqueeBannerState extends State<ContinuousMarqueeBanner> with 
                 // 如果计算出的位置太靠右（超过了总宽度减去一个元素的宽度），把它挪到最左边去，实现无缝衔接
                 final double adjustedX = x > totalWidth - totalItemWidth ? x - totalWidth : x;
 
-                // 使用 Transform.translate，绝对禁止触发 CPU 的 performLayout
+                // 恢复纯粹的浮点数 Transform.translate，让 GPU 处理亚像素抗锯齿 (Sub-pixel AA)
+                // 彻底去掉 roundToDouble()，因为它就是导致你感觉“晃动得更厉害”（阶梯跳跃感）的罪魁祸首！
                 return Transform.translate(
                   offset: Offset(adjustedX, 0),
                   child: SizedBox(
@@ -866,15 +734,15 @@ class _ContinuousMarqueeBannerState extends State<ContinuousMarqueeBanner> with 
                         borderRadius: BorderRadius.circular(widget.borderRadius),
                       ),
                       child: CachedNetworkImage(
-                        imageUrl: displayUrls[i],
-                        fit: BoxFit.cover,
-                        memCacheWidth: 800,
-                        placeholder: (context, url) => Container(color: Colors.white.withValues(alpha: 0.1)),
-                        errorWidget: (context, url, error) => Container(
-                          color: Colors.white.withValues(alpha: 0.1),
-                          child: const Center(child: Icon(Icons.broken_image_outlined, color: Colors.white)),
-                        ),
-                      ),
+        imageUrl: displayUrls[i],
+        fit: BoxFit.cover,
+        memCacheWidth: 800,
+        placeholder: (context, url) => Container(color: Colors.white.withValues(alpha: 0.1)),
+        errorWidget: (context, url, error) => Container(
+          color: Colors.white.withValues(alpha: 0.1),
+          child: const Center(child: Icon(Icons.broken_image_outlined, color: Colors.white)),
+        ),
+      ),
                     ),
                   ),
                 );
@@ -928,13 +796,13 @@ class _HeroBannerContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final imageUrls = _categoryBanners[categoryIndex] ?? _categoryBanners[1]!;
     
-    // 增加基础的顶部 padding 避开沉浸式状态栏 (与 Header 对齐)
-    final topPadding = MediaQuery.of(context).padding.top + 32;
+    // 因为没有了悬浮导航栏，这里我们大大缩小 top padding
+    // 仅保留一个极小的安全区避让，让广告图最大程度贴顶
+    final topPadding = MediaQuery.of(context).padding.top + 8;
 
     return Container(
-      // 背景必须透明，彻底移除黑色相框
       color: Colors.transparent,
-      padding: EdgeInsets.only(top: topPadding + 60), // 给上方悬浮导航栏留出空间，但不设置左右 padding 以实现贯穿
+      padding: EdgeInsets.only(top: topPadding), // 极小顶距，实现视觉冲顶
       child: ContinuousMarqueeBanner(
         imageUrls: imageUrls,
         itemWidth: itemWidth,
@@ -948,151 +816,113 @@ class _HeroBannerContent extends StatelessWidget {
 }
 
 /// 黏性小分类导航 (纯图标横向滑动) -> 已改为跟随滚动的 _SubCategoryHeaderContent
-class _SubCategoryHeaderContent extends StatelessWidget {
-  final int mainCategoryIndex;
+class _MainCategorySelectorAndSearch extends StatelessWidget {
   final int selectedIndex;
-  final ValueChanged<int> onChanged;
+  final VoidCallback onTap;
 
-  const _SubCategoryHeaderContent({
-    required this.mainCategoryIndex,
+  const _MainCategorySelectorAndSearch({
     required this.selectedIndex,
-    required this.onChanged,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    // 构建基于实景图的分类数据池 (每个大类 6 个小分类)
-    final List<Map<String, String>> categories;
+    // 三个大类的代表图片 (头像)
+    final List<String> avatars = [
+      'https://picsum.photos/id/102/100/100', // 商店
+      'https://picsum.photos/id/20/100/100',  // 商城
+      'https://picsum.photos/id/500/100/100', // 生活
+    ];
 
-    if (mainCategoryIndex == 0) { // 商店
-      categories = [
-        {'label': '综合', 'image': 'https://picsum.photos/id/102/300/300'},
-        {'label': '餐饮', 'image': 'https://picsum.photos/id/1080/300/300'},
-        {'label': '咖啡', 'image': 'https://picsum.photos/id/1060/300/300'},
-        {'label': '健身', 'image': 'https://picsum.photos/id/1050/300/300'},
-        {'label': '电影', 'image': 'https://picsum.photos/id/1043/300/300'},
-        {'label': '出行', 'image': 'https://picsum.photos/id/1072/300/300'},
-      ];
-    } else if (mainCategoryIndex == 1) { // 商城
-      categories = [
-        {'label': '推荐', 'image': 'https://picsum.photos/id/20/300/300'},
-        {'label': '数码', 'image': 'https://picsum.photos/id/366/300/300'},
-        {'label': '服饰', 'image': 'https://picsum.photos/id/335/300/300'},
-        {'label': '家居', 'image': 'https://picsum.photos/id/405/300/300'},
-        {'label': '酒水', 'image': 'https://picsum.photos/id/42/300/300'},
-        {'label': '美妆', 'image': 'https://picsum.photos/id/450/300/300'},
-      ];
-    } else { // 生活
-      categories = [
-        {'label': '附近', 'image': 'https://picsum.photos/id/500/300/300'},
-        {'label': '保洁', 'image': 'https://picsum.photos/id/600/300/300'},
-        {'label': '维修', 'image': 'https://picsum.photos/id/700/300/300'},
-        {'label': '搬家', 'image': 'https://picsum.photos/id/800/300/300'},
-        {'label': '消毒', 'image': 'https://picsum.photos/id/900/300/300'},
-        {'label': '宠物', 'image': 'https://picsum.photos/id/1025/300/300'},
-      ];
-    }
+    final String hintText = selectedIndex == 0 
+        ? '你想逛哪家商店？' 
+        : (selectedIndex == 1 ? '你想购买什么？' : '需要什么服务？');
 
-    return Container(
-      height: 100, // 直接使用固定高度，不再引用 maxExtent
-      decoration: const BoxDecoration(
-        color: Colors.transparent, // 完全透明
-      ),
-      child: Center(
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), 
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(categories.length, (index) {
-              final isSelected = selectedIndex == index;
-              final category = categories[index];
-              
-              return GestureDetector(
-                onTap: () => onChanged(index),
-                behavior: HitTestBehavior.opaque,
-                // 【底层优化】图层冷冻 + 物理弹簧引擎，极度流畅
-                child: RepaintBoundary(
-                  child: AnimatedScale(
-                    scale: isSelected ? 1.05 : 1.0,
-                    duration: const Duration(milliseconds: 500),
-                    curve: Curves.elasticOut, // 极具重量感的果冻回弹
-                    child: Container(
-                      margin: const EdgeInsets.only(right: 16),
-                      width: 76, 
-                      height: 84, 
-                      // 移除 CustomPaint，回归纯净层级
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.1),
-                          width: isSelected ? 2 : 1,
-                        ),
-                        boxShadow: isSelected ? [
-                          BoxShadow(
-                            color: Colors.white.withValues(alpha: 0.3),
-                            blurRadius: 12,
-                            spreadRadius: 2,
-                          ),
-                        ] : null,
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            // 1. 底层实景图片 (配合 ColorFilter)
-                            ColorFiltered(
-                              colorFilter: isSelected 
-                                  ? const ColorFilter.mode(Colors.transparent, BlendMode.multiply) 
-                                  : const ColorFilter.mode(Colors.grey, BlendMode.saturation),
-                              child: CachedNetworkImage(
-                                imageUrl: category['image']!,
-                                fit: BoxFit.cover,
-                                memCacheWidth: 200, 
-                                placeholder: (context, url) => Container(color: Colors.grey[900]), 
-                                errorWidget: (context, url, error) => Container(color: Colors.grey[900]),
-                              ),
-                            ),
-                            // 2. 底部渐变遮罩
-                            Positioned(
-                              bottom: 0, left: 0, right: 0,
-                              height: 40,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [Colors.transparent, Colors.black.withValues(alpha: 0.9)],
-                                  ),
-                                ),
-                              ),
-                            ),
-                            // 3. 底部文字
-                            Positioned(
-                              bottom: 8, left: 0, right: 0,
-                              child: Text(
-                                category['label']!,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: isSelected ? FontWeight.w900 : FontWeight.w500,
-                                  shadows: [
-                                    Shadow(color: Colors.black.withValues(alpha: 0.8), blurRadius: 4),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+    return Row(
+      children: [
+        // 左侧：叠加的圆形头像 (点击切换)
+        GestureDetector(
+          onTap: onTap,
+          behavior: HitTestBehavior.opaque,
+          child: SizedBox(
+            width: 100, // 3个头像叠加的宽度
+            height: 56,
+            child: Stack(
+              children: [
+                // 底层 2 (最不重要)
+                _buildAvatar(avatars[(selectedIndex + 2) % 3], 48, false, 0),
+                // 底层 1
+                _buildAvatar(avatars[(selectedIndex + 1) % 3], 24, false, 1),
+                // 顶层 (当前选中)
+                _buildAvatar(avatars[selectedIndex], 0, true, 2),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 16),
+        // 右侧：动态搜索框
+        Expanded(
+          child: Container(
+            height: 56,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.search, color: Colors.white70, size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    hintText,
+                    style: const TextStyle(color: Colors.white70, fontSize: 16, fontWeight: FontWeight.w300),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-              );
-            }),
+                // 右侧加个麦克风图标增加细节
+                const Icon(Icons.mic_none, color: Colors.white70, size: 24),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAvatar(String imageUrl, double leftPos, bool isSelected, int zIndex) {
+    return Positioned(
+      left: leftPos,
+      child: Container(
+        width: 56,
+        height: 56,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: isSelected ? Colors.white : Colors.black,
+            width: isSelected ? 2 : 1,
+          ),
+          boxShadow: isSelected ? [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.6),
+              blurRadius: 10,
+            )
+          ] : null,
+        ),
+        child: ClipOval(
+          child: ColorFiltered(
+            colorFilter: isSelected 
+                ? const ColorFilter.mode(Colors.transparent, BlendMode.multiply) 
+                : const ColorFilter.mode(Colors.grey, BlendMode.saturation),
+            child: CachedNetworkImage(
+              imageUrl: imageUrl,
+              fit: BoxFit.cover,
+              memCacheWidth: 120,
+              placeholder: (context, url) => Container(color: Colors.grey[900]),
+              errorWidget: (context, url, error) => Container(color: Colors.grey[900]),
+            ),
           ),
         ),
       ),
