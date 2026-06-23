@@ -56,15 +56,17 @@ class VideoEnginePool {
 
       // 如果当前槽位的 URL 发生变更，执行底层 I/O 加载
       if (_loadedUrls[poolIndex] != url) {
-        player.open(Media(url), play: false);
+        // 【终极防卡顿修复】：如果是焦点视频 (i == 0)，必须在 open 时直接传入 play: true。
+        // 绝对不能先 open(play: false) 紧接着再调用 play()，这会导致 C++ 底层时序撕裂，引发卡顿和假缓冲！
+        player.open(Media(url), play: i == 0);
         _loadedUrls[poolIndex] = url;
-      }
-
-      // 焦点分离：只有处于正中心的视频允许播放，两边全部分配显存但不播放
-      if (i == 0) {
-        player.play();
       } else {
-        player.pause();
+        // URL 没变，说明已经预热在显存中，直接秒切播放/暂停状态
+        if (i == 0) {
+          player.play();
+        } else {
+          player.pause();
+        }
       }
     }
   }

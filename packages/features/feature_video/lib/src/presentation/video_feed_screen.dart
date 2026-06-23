@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:core_design_system/core_design_system.dart';
 import 'package:core_network/core_network.dart'; // 引入云端服务
 import 'package:media_kit_video/media_kit_video.dart';
 import '../domain/video_engine_pool.dart'; // 引入底层引擎池
+import 'video_upload_screen.dart'; // 引入上传页面
 
 /// 模拟从后端拉取的短视频数据模型
 class VideoModel {
@@ -38,6 +40,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   int _currentIndex = 0;
+  DateTime _lastScrollTime = DateTime.now(); // 滚轮极致防抖时间戳
 
   @override
   void initState() {
@@ -171,10 +174,33 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
                 return const SizedBox();
               }
 
-              return _VideoPlayerItem(
-                video: _videos[index],
-                index: index, // 传入实际索引
-                isActive: index == _currentIndex && widget.isTabActive,
+              return Listener(
+                onPointerSignal: (pointerSignal) {
+                  if (pointerSignal is PointerScrollEvent) {
+                    // 【终极降维打击】：必须将 Listener 放在 PageView 内部 (itemBuilder 里)！
+                    // 因为 Flutter 事件是冒泡的，子节点比父节点先收到事件。
+                    // 这样我们的拦截器才能比 PageView 底层的 Scrollable 更早注册 Resolver，真正“私吞”滚轮事件！
+                    GestureBinding.instance.pointerSignalResolver.register(pointerSignal, (PointerSignalEvent event) {
+                      final e = event as PointerScrollEvent;
+                      final now = DateTime.now();
+                      
+                      // 400ms 极致防抖，完美匹配翻页动画时间，拒绝任何连滚和抽搐
+                      if (now.difference(_lastScrollTime).inMilliseconds < 400) return;
+                      _lastScrollTime = now;
+
+                      if (e.scrollDelta.dy > 0 && _currentIndex < _videos.length - 1) {
+                        _pageController.animateToPage(_currentIndex + 1, duration: const Duration(milliseconds: 400), curve: Curves.easeOutCubic);
+                      } else if (e.scrollDelta.dy < 0 && _currentIndex > 0) {
+                        _pageController.animateToPage(_currentIndex - 1, duration: const Duration(milliseconds: 400), curve: Curves.easeOutCubic);
+                      }
+                    });
+                  }
+                },
+                child: _VideoPlayerItem(
+                  video: _videos[index],
+                  index: index, // 传入实际索引
+                  isActive: index == _currentIndex && widget.isTabActive,
+                ),
               );
             },
           ),
@@ -231,16 +257,23 @@ class _VideoPlayerItem extends StatelessWidget {
               child: SizedBox(
                 width: MediaQuery.of(context).size.width,
                 height: MediaQuery.of(context).size.height,
-                child: Video(controller: controller),
+                child: Video(
+                  controller: controller,
+                  controls: NoVideoControls, // 禁用默认的控制器，使用我们自己写的沉浸式 UI
+                ),
               ),
             ),
           ),
 
-          // 2. 暂停图标蒙层 (通过 StreamBuilder 监听底层状态，不再需要 setState)
+          // 2. 状态蒙层 (暂停图标)
+          // 【极致体验重构】：彻底抛弃基于 `buffering` 的粗暴 Loading 圈。
+          // 因为底层 C++ 引擎池已经提前 1 个位置 open 预载了视频，
+          // 滑动过来时已经有画面了。微小的 I/O 缓冲不应该打断视觉连贯性，
+          // 真正的国民级 App 宁可画面静止一瞬间，也绝不闪烁 Loading 圈。
           StreamBuilder<bool>(
             stream: player.stream.playing,
-            builder: (context, snapshot) {
-              final isPlaying = snapshot.data ?? false;
+            builder: (context, playingSnapshot) {
+              final isPlaying = playingSnapshot.data ?? false;
               if (isPlaying || !isActive) return const SizedBox();
               return const Center(
                 child: Icon(Icons.play_arrow, size: 80, color: Colors.white),
@@ -250,7 +283,7 @@ class _VideoPlayerItem extends StatelessWidget {
 
           // 3. 底部信息层 (作者、文案)
           Positioned(
-            bottom: 20,
+            bottom: 80, // 避开最底部的进度条和底部导航栏
             left: 16,
             right: 80, // 给右侧的点赞按钮留出空间
             child: Column(
@@ -271,9 +304,9 @@ class _VideoPlayerItem extends StatelessWidget {
             ),
           ),
 
-          // 4. 右侧操作区 (点赞、评论、分享)
+          // 4. 右侧操作区 (点赞、评论、分享、发布)
           Positioned(
-            bottom: 20,
+            bottom: 80, // 和底部信息层对齐，避开进度条和底部导航栏
             right: 8,
             child: Column(
               children: [
@@ -294,7 +327,58 @@ class _VideoPlayerItem extends StatelessWidget {
                   ),
                   child: const Icon(Icons.music_note, color: Colors.white),
                 ),
+                const SizedBox(height: 30),
+                // 发布/添加视频按钮，作为最顶端的UI设计重构，放在最末尾
+                GestureDetector(
+                  onTap: () {
+                    Navigator.push(context, MaterialPageRoute(builder: (context) => const VideoUploadScreen()));
+                  },
+                  child: Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.2),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(Icons.add, color: Colors.black, size: 32),
+                  ),
+                ),
               ],
+            ),
+          ),
+
+          // 5. 最底部进度条 (完全沉浸，极其微小)
+          Positioned(
+            bottom: 60, // 刚好在底部导航栏上方
+            left: 0,
+            right: 0,
+            height: 2,
+            child: StreamBuilder<Duration>(
+              stream: player.stream.position,
+              builder: (context, snapshot) {
+                // 绝对同步读取底层状态，拒绝 StreamBuilder 嵌套导致的 state 丢失
+                final position = player.state.position;
+                final duration = player.state.duration;
+                
+                double progress = 0;
+                if (duration.inMilliseconds > 0) {
+                  progress = position.inMilliseconds / duration.inMilliseconds;
+                }
+                progress = progress.clamp(0.0, 1.0);
+
+                return LinearProgressIndicator(
+                  value: progress,
+                  backgroundColor: Colors.white.withValues(alpha: 0.2),
+                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                );
+              },
             ),
           ),
         ],
