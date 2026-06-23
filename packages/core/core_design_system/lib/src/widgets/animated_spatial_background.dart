@@ -1,6 +1,5 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import '../theme/background_manager.dart';
 
 /// 极简美学：深空流光背景组件

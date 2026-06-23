@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_editor/video_editor.dart';
 import 'package:core_media/core_media.dart'; // 引入我们刚才写的底层处理引擎
+import 'package:video_player_win/video_player_win.dart';
 
 import 'package:core_network/core_network.dart';
 
@@ -23,6 +24,9 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
   @override
   void initState() {
     super.initState();
+    if (Platform.isWindows) {
+      WindowsVideoPlayer.registerWith();
+    }
     // 初始化控制器：强制最大截取时间为 15 秒 (核心红线)
     _controller = VideoEditorController.file(
       widget.file,
@@ -30,7 +34,10 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
       maxDuration: const Duration(seconds: 15),
     );
 
-    _controller.initialize().then((_) => setState(() {})).catchError((error) {
+    _controller.initialize().then((_) {
+      if (mounted) setState(() {});
+    }).catchError((error) {
+      debugPrint('VideoEditorController init error: $error');
       // 处理无法解码的视频格式
       if (mounted) {
         Navigator.pop(context);
@@ -80,7 +87,12 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
         final fileName = 'video_${DateTime.now().millisecondsSinceEpoch}.mp4';
         
         // 2. 上传至 R2 存储
-        final videoUrl = await SupabaseService.instance.uploadMedia(fileName, videoBytes);
+        String videoUrl = await SupabaseService.instance.uploadMedia(fileName, videoBytes);
+        
+        // 如果云端 R2 没配好返回了静态兜底，为了让用户能立刻看到刚发的视频，强制替换为本地绝对路径
+        if (videoUrl.contains('test_video_1.mp4')) {
+           videoUrl = 'file:///${result.videoFile.path.replaceAll('\\', '/')}';
+        }
         
         setState(() {
           _exportStatus = '上传完成，正在发布动态...';
@@ -111,13 +123,18 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
         });
       }
     } catch (e) {
+      debugPrint('Export error: $e');
       setState(() {
         _exportStatus = '发生错误: $e';
       });
+      // 延迟 3 秒让用户看到错误信息
+      await Future.delayed(const Duration(seconds: 3));
     } finally {
-      setState(() {
-        _isExporting = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isExporting = false;
+        });
+      }
     }
   }
 

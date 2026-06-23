@@ -241,6 +241,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
           // 核心优化：物理级预渲染边界。
           // 提前在屏幕外 2500 像素的位置就开始在 Isolate (独立线程) 中解码图片并构建 RenderObject。
           // 这样用户滑到的时候，图片已经变成了 GPU 里的纹理 (Texture)，实现绝对的 0 毫秒掉帧。
+          // ignore: deprecated_member_use
           cacheExtent: 2500, 
           slivers: [
             // 沉浸式头部区域：广告传送带置顶，且贯穿左右边缘；导航栏悬浮其上

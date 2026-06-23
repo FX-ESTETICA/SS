@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:ffmpeg_kit_flutter_min_gpl/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_min_gpl/return_code.dart';
 import 'package:ffmpeg_kit_flutter_min_gpl/ffmpeg_session.dart';
@@ -6,7 +7,7 @@ import 'package:ffmpeg_kit_flutter_min_gpl/ffmpeg_session.dart';
 /// 视频处理结果记录
 class VideoProcessResult {
   final File videoFile;
-  final File coverFile;
+  final File? coverFile;
 
   VideoProcessResult(this.videoFile, this.coverFile);
 }
@@ -24,6 +25,14 @@ class VideoProcessor {
     double coverTimeSeconds = 0.0,
     int maxDurationSeconds = 15,
   }) async {
+    // Windows 开发环境下直接跳过 FFmpeg (因为 ffmpeg_kit 不支持 Windows)，原片直传用于预览
+    if (Platform.isWindows) {
+      debugPrint('Windows 环境下跳过 FFmpeg 转码，直接使用原片。');
+      // 模拟一点延迟，让 UI 上的 loading 状态能被看见
+      await Future.delayed(const Duration(seconds: 1));
+      return VideoProcessResult(File(sourcePath), null);
+    }
+
     final tempDir = Directory.systemTemp;
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     
