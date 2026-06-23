@@ -107,19 +107,51 @@ class _SuperAppShellState extends State<SuperAppShell> {
       // 使用 IndexedStack 保持页面状态，并在最顶层悬浮覆盖无边框窗口控制栏
       body: Stack(
         children: [
+          // 【终极沉浸】：如果要在商城页让图片盖住甚至超越标题栏的视觉限制
+          // IndexedStack 本身就会撑满整个 Scaffold（因为 extendBody: true 且没有 appBar）
           IndexedStack(
             index: _currentIndex,
             children: pages,
           ),
+          
           // 悬浮在壁纸最上方的自定义窗口控制栏
-          const Positioned(
+          // 彻底抛弃 WindowCaption，用最原始的 Container 覆盖拖拽区域
+          // 这样既保留了拖拽移动窗口的能力，又绝对不会产生任何阻挡渲染的黑色安全区
+          Positioned(
             top: 0,
             left: 0,
             right: 0,
-            height: 40,
-            child: WindowCaption(
-              brightness: Brightness.dark, // 强制按钮图标为纯白色
-              backgroundColor: Colors.transparent, // 绝对透明，融入底层流光
+            height: 32, // 原生 Windows 标题栏高度大约是 32
+            child: Row(
+              children: [
+                // 左侧绝大部分区域用于拖拽窗口
+                Expanded(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onPanStart: (details) {
+                      windowManager.startDragging();
+                    },
+                    child: Container(
+                      color: Colors.transparent, // 绝对透明
+                    ),
+                  ),
+                ),
+                // 右侧放置三个原生的控制按钮 (最小化、最大化、关闭)
+                // 强制要求按钮也是绝对透明背景，只绘制白色线条图标
+                Row(
+                  children: [
+                    _buildWindowButton(Icons.minimize, () => windowManager.minimize()),
+                    _buildWindowButton(Icons.crop_square, () async {
+                      if (await windowManager.isMaximized()) {
+                        windowManager.unmaximize();
+                      } else {
+                        windowManager.maximize();
+                      }
+                    }),
+                    _buildWindowButton(Icons.close, () => windowManager.close(), isClose: true),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
@@ -147,6 +179,26 @@ class _SuperAppShellState extends State<SuperAppShell> {
             BottomNavigationBarItem(icon: Icon(_currentIndex == 2 ? Icons.shopping_bag : Icons.shopping_bag_outlined), label: ''),
             BottomNavigationBarItem(icon: Icon(_currentIndex == 3 ? Icons.person : Icons.person_outline), label: ''),
           ],
+        ),
+      ),
+    );
+  }
+
+  // 构建自定义的 Windows 窗口控制按钮
+  Widget _buildWindowButton(IconData icon, VoidCallback onTap, {bool isClose = false}) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        width: 46,
+        height: 32,
+        color: Colors.transparent, // 绝对透明背景
+        child: Center(
+          child: Icon(
+            icon,
+            color: Colors.white, // 纯白图标
+            size: 16, // 缩小图标尺寸，模仿原生
+          ),
         ),
       ),
     );
