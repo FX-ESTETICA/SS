@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:core_design_system/core_design_system.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'shop_feed_screen.dart'; // 获取 ProductModel
@@ -135,7 +135,7 @@ class _LocalServiceDetailScreenState extends State<LocalServiceDetailScreen> {
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 12,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ),
@@ -194,7 +194,7 @@ class _LocalServiceDetailScreenState extends State<LocalServiceDetailScreen> {
                   style: TextStyle(
                     color: Colors.black,
                     fontSize: 10,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ),
@@ -232,7 +232,7 @@ class _LocalServiceDetailScreenState extends State<LocalServiceDetailScreen> {
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 14,
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w500,
                 height: 1.5,
               ),
             ),
@@ -270,7 +270,7 @@ class _LocalServiceDetailScreenState extends State<LocalServiceDetailScreen> {
                   '设为展示首图',
                   style: TextStyle(
                     color: Colors.white,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
                 onTap: () {
@@ -288,7 +288,7 @@ class _LocalServiceDetailScreenState extends State<LocalServiceDetailScreen> {
                   '删除此媒体',
                   style: TextStyle(
                     color: Colors.redAccent,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
                 onTap: () {
@@ -331,7 +331,7 @@ class _LocalServiceDetailScreenState extends State<LocalServiceDetailScreen> {
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
                 Text(
@@ -339,7 +339,7 @@ class _LocalServiceDetailScreenState extends State<LocalServiceDetailScreen> {
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 36,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
@@ -360,7 +360,7 @@ class _LocalServiceDetailScreenState extends State<LocalServiceDetailScreen> {
           style: const TextStyle(
             color: Colors.white,
             fontSize: 24,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w500,
             height: 1.4,
           ),
         ),
@@ -391,7 +391,7 @@ class _LocalServiceDetailScreenState extends State<LocalServiceDetailScreen> {
         style: TextStyle(
           color: isSolid ? Colors.black : Colors.white,
           fontSize: 10,
-          fontWeight: FontWeight.bold,
+          fontWeight: FontWeight.w500,
         ),
       ),
     );
@@ -428,7 +428,7 @@ class _LocalServiceDetailScreenState extends State<LocalServiceDetailScreen> {
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -445,7 +445,7 @@ class _LocalServiceDetailScreenState extends State<LocalServiceDetailScreen> {
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 12,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ],
@@ -516,7 +516,7 @@ class _LocalServiceDetailScreenState extends State<LocalServiceDetailScreen> {
           style: const TextStyle(
             color: Colors.white,
             fontSize: 12,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ],
@@ -532,7 +532,7 @@ class _LocalServiceDetailScreenState extends State<LocalServiceDetailScreen> {
           style: TextStyle(
             color: Colors.white,
             fontSize: 20,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w500,
           ),
         ),
         SizedBox(height: 16),
@@ -571,7 +571,7 @@ class _LocalServiceDetailScreenState extends State<LocalServiceDetailScreen> {
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 10,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
@@ -590,7 +590,7 @@ class _LocalServiceDetailScreenState extends State<LocalServiceDetailScreen> {
                       style: const TextStyle(
                         color: Colors.black,
                         fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w500,
                       ), // 纯黑字体
                     ),
                   ),

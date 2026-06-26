@@ -1,4 +1,4 @@
-import 'dart:math' as math;
+﻿import 'dart:math' as math;
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -384,7 +384,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 36,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w500,
                       letterSpacing: 2,
                     ),
                   ),
@@ -399,7 +399,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             color: Colors.white54,
             fontSize: 12,
             letterSpacing: 1.2,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w500,
           ),
         ),
         const SizedBox(height: 8),
@@ -411,7 +411,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           style: const TextStyle(
             color: Colors.white,
             fontSize: 28,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w500,
             letterSpacing: 0.5,
           ),
         ),
@@ -497,7 +497,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                       style: TextStyle(
                           color: Colors.white,
                           fontSize: 16,
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w500,
                           letterSpacing: 2,),),
                   const SizedBox(height: 8),
                   Text('ID: $userId9',
@@ -575,7 +575,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 32,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w500,
                 letterSpacing: 1,
               ),
             ),
@@ -770,7 +770,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                         style: TextStyle(
                             color: Colors.white,
                             fontSize: 24,
-                            fontWeight: FontWeight.bold,),),
+                            fontWeight: FontWeight.w500,),),
                   ),
                   const Divider(color: Colors.white10, height: 1),
                   const SizedBox(height: 16),
@@ -843,7 +843,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           style: TextStyle(
               color: Colors.white,
               fontSize: 16,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.w300,),),
+              fontWeight: isSelected ? FontWeight.w500 : FontWeight.w300,),),
       onTap: () {
         BackgroundManager.instance.setBackground(type);
       },

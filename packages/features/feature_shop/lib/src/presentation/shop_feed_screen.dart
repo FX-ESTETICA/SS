@@ -134,6 +134,34 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
   List<ProductModel> _generateMockProducts() {
     final List<ProductModel> mocks = [];
 
+    // 真实感极强的商铺名称字典
+    final Map<String, List<String>> realShopNames = {
+      '综合商店': ['无印良品 MUJI', 'Costco 极简生活', 'KKV 潮流集合', '优衣库 UNIQLO'],
+      '网红餐饮': ['Shake Shack', '海底捞火锅', '太二酸菜鱼', '文和友'],
+      '精品咖啡': ['% Arabica', 'Manner Coffee', 'Seesaw Coffee', '瑞幸咖啡'],
+      '深夜酒吧': ['COMMUNE', '胡桃里', 'Helens 海伦司', 'TAO 酒吧'],
+      '附近服务': ['极速开锁', '天鹅到家', '啄木鸟维修', '同城快送'],
+      '上门保洁': ['自如保洁', '58同城精选', '闪电家政', '阿姨帮'],
+      '家电维修': ['苏宁维修', '极客修', '十分到家', '百修将'],
+      '同城搬家': ['货拉拉搬家', '快狗打车', '蓝犀牛', '蚂蚁搬家'],
+    };
+
+    // 真实感极强的商品/服务标题字典
+    final Map<String, List<String>> realProductTitles = {
+      '综合商店': ['超大容量旅行双肩包', '北欧风纯色纯棉床笠', '桌面收纳亚克力盲盒', '香薰蜡烛无火扩香'],
+      '网红餐饮': ['招牌经典双人特惠套餐', '招牌牛蛙酸菜鱼套餐', '网红瀑布冰沙拿铁', '黯然销魂小龙虾'],
+      '精品咖啡': ['西班牙拿铁', '桂花燕麦拿铁', '冷萃冰滴咖啡', '手冲瑰夏咖啡豆'],
+      '深夜酒吧': ['百威纯生精酿畅饮', '长岛冰茶特调鸡尾酒', '莫吉托微醺套餐', '德式烤肠拼盘'],
+      '为你推荐': ['2026新款降噪蓝牙耳机', '护眼级人体工学办公椅', '无绳跳绳燃脂健身', '便携式迷你筋膜枪', '桌面加湿器', '复古黑胶唱片机'],
+      '数码极客': ['AirPods Pro 2代', '罗技机械键盘茶轴', '雷蛇无线游戏鼠标', '大疆头戴式运动相机', 'GaN 120W氮化镓快充', '便携式磁吸充电宝'],
+      '潮流服饰': ['纯棉重磅宽松T恤', '复古直筒阔腿牛仔裤', '防晒冰丝透气外套', '阿甘鞋复古慢跑鞋', '极简无痕保暖内衣', '防水户外冲锋衣'],
+      '品质家居': ['泰国进口乳胶枕', '智能感应垃圾桶', '北欧极简落地灯', '记忆棉护腰靠垫', '除螨吸尘器', '陶瓷不粘平底锅'],
+      '附近服务': ['极速上门开锁换锁', '管道疏通/漏水维修', '家庭电路检测维修', '同城加急文件快送'],
+      '上门保洁': ['日常深度保洁 3小时', '新居开荒保洁特惠', '厨房油烟机深度清洗', '全屋玻璃双面擦洗'],
+      '家电维修': ['空调深度拆洗除菌', '洗衣机加氟/维修', '冰箱内筒消毒清洗', '电视机主板维修'],
+      '同城搬家': ['金牌师傅同城搬家', '面包车小型拉货', '日式收纳打包搬家', '大件家具拆装搬运'],
+    };
+
     // --- 0. 商店 (Store) ---
     final storeCategories = ['综合商店', '网红餐饮', '精品咖啡', '深夜酒吧'];
     for (var sub in storeCategories) {
@@ -143,12 +171,12 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
         final img3 = 'https://picsum.photos/id/${102 + i * 10}/800/450';
         mocks.add(
           ProductModel(
-            title: '$sub - 招牌体验套餐 ${i + 1}',
+            title: realProductTitles[sub]?[i % 4] ?? '$sub - 招牌体验套餐 ${i + 1}',
             imageUrl: img1, // 16:9
             mediaUrls: [img1, img2, img3], // 模拟商家上传了 3 张图
             price: 99.0 + (i * 50),
             salesCount: 500 + i * 120,
-            shopName: '$sub 本地旗舰店',
+            shopName: realShopNames[sub]?[i % 4] ?? '$sub 本地旗舰店',
             category: '0',
             subCategory: sub,
           ),
@@ -162,7 +190,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
       for (int i = 0; i < 6; i++) {
         mocks.add(
           ProductModel(
-            title: '$sub - 2026新款降维打击极品 ${i + 1}',
+            title: realProductTitles[sub]?[i % 6] ?? '$sub - 2026新款降维打击极品 ${i + 1}',
             imageUrl: 'https://picsum.photos/id/${200 + i * 10}/400/600', // 竖向
             price: 199.0 + (i * 200),
             salesCount: 1000 + i * 300,
@@ -180,12 +208,12 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
       for (int i = 0; i < 4; i++) {
         mocks.add(
           ProductModel(
-            title: '$sub - 专业上门极速响应 ${i + 1}',
+            title: realProductTitles[sub]?[i % 4] ?? '$sub - 专业上门极速响应 ${i + 1}',
             imageUrl:
                 'https://picsum.photos/id/${300 + i * 10}/800/450', // 16:9
             price: 50.0 + (i * 80),
             salesCount: 200 + i * 50,
-            shopName: '智选同城金牌',
+            shopName: realShopNames[sub]?[i % 4] ?? '智选同城金牌',
             category: '2',
             subCategory: sub,
           ),
@@ -301,7 +329,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
                 else if (_errorMessage != null)
                   SliverToBoxAdapter(
                     child: Center(
-                      child: Text(_errorMessage!, style: AppTypography.body),
+                      child: Text(_errorMessage!, style: AppTypography.bodyLarge),
                     ),
                   )
                 else
@@ -327,7 +355,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
         child: Padding(
           padding: EdgeInsets.only(top: 100, bottom: 500),
           child: Center(
-            child: Text('暂无相关商品', style: AppTypography.body),
+            child: Text('暂无相关商品', style: AppTypography.bodyLarge),
           ),
         ),
       );
@@ -380,7 +408,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
             style: const TextStyle(
               color: Colors.white,
               fontSize: 20,
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ),
@@ -461,7 +489,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
             style: TextStyle(
               color: Colors.white,
               fontSize: 14,
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ],
@@ -549,7 +577,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w500,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -580,7 +608,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
                       style: TextStyle(
                         color: Colors.black,
                         fontSize: 12,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ),
@@ -681,7 +709,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 14, // 减小字号
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w500,
                       height: 1.2,
                     ),
                     maxLines: 1,
@@ -697,7 +725,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 11, // 减小字号
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -790,7 +818,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 12, // 减小字号
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w500,
                       height: 1.2,
                     ),
                     maxLines: 2,
@@ -805,7 +833,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 10, // 减小字号
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                       Text(
@@ -813,7 +841,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 16, // 减小字号
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                       const Spacer(),
@@ -893,7 +921,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 14, // 减小字号
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w500,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -912,7 +940,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
                               style: TextStyle(
                                 color: Colors.white,
                                 fontSize: 11, // 减小字号
-                                fontWeight: FontWeight.bold,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -940,7 +968,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
                       style: TextStyle(
                         color: Colors.black,
                         fontSize: 11, // 减小字号
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w500,
                       ),
                     ), // 强制纯黑
                   ),

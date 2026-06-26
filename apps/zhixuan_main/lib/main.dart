@@ -92,7 +92,7 @@ class _SuperAppShellState extends State<SuperAppShell> {
       const ChatScreen(), // 0: 挂载微信 IM 模块
       ShopFeedScreen(isTabActive: _currentIndex == 1), // 1: 挂载淘宝商城模块
       VideoFeedScreen(isTabActive: _currentIndex == 2), // 2: 挂载抖音短视频模块
-      const BookingPlaceholderScreen(), // 3: 预约/消费记录模块 (新增)
+      const BookingRecordsScreen(), // 3: 预约/消费记录模块 (已替换为全新极简 UI)
       ProfileScreen(
         onLoginSuccess: () {
           // 登录成功后跳转到视频页（索引 2）
@@ -229,36 +229,3 @@ class _SuperAppShellState extends State<SuperAppShell> {
   }
 }
 
-/// 临时的预约/消费记录占位页面
-class BookingPlaceholderScreen extends StatelessWidget {
-  const BookingPlaceholderScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.calendar_month, color: Colors.white, size: 64),
-            const SizedBox(height: 24),
-            const Text(
-              '我的预约与消费记录',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '服务记录、到店核销将在这里展示',
-              style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.7), fontSize: 14),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

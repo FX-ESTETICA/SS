@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:core_design_system/core_design_system.dart';
@@ -246,7 +246,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
               child: Text(
                 _errorMessage!,
                 textAlign: TextAlign.center,
-                style: AppTypography.caption.copyWith(color: Colors.white),
+                style: AppTypography.labelLarge.copyWith(color: Colors.white),
               ),
             ),
           ),
@@ -319,13 +319,13 @@ class _VideoPlayerItem extends StatelessWidget {
               children: [
                 Text(
                   video.authorName,
-                  style: AppTypography.h1
+                  style: AppTypography.headlineLarge
                       .copyWith(color: Colors.white, fontSize: 18),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   video.description,
-                  style: AppTypography.body.copyWith(color: Colors.white),
+                  style: AppTypography.bodyLarge.copyWith(color: Colors.white),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -427,8 +427,8 @@ class _VideoPlayerItem extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           label,
-          style: AppTypography.caption
-              .copyWith(color: Colors.white, fontWeight: FontWeight.bold),
+          style: AppTypography.labelLarge
+              .copyWith(color: Colors.white, fontWeight: FontWeight.w500),
         ),
       ],
     );

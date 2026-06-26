@@ -1,4 +1,4 @@
-import 'dart:io';
+﻿import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_editor/video_editor.dart';
 import 'package:core_media/core_media.dart'; // 引入我们刚才写的底层处理引擎
@@ -266,7 +266,7 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
             '截取 15 秒',
             style: TextStyle(
               color: Colors.white,
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w500,
               fontSize: 16,
             ),
           ),
@@ -283,7 +283,7 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
                 '发布',
                 style: TextStyle(
                   color: Colors.black,
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ),

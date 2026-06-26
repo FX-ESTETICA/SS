@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:core_design_system/core_design_system.dart';
 import 'package:core_network/core_network.dart';
@@ -159,7 +159,7 @@ class _ChatScreenState extends State<ChatScreen> {
               style: TextStyle(
                   color: Colors.white,
                   fontSize: 18,
-                  fontWeight: FontWeight.bold,),),
+                  fontWeight: FontWeight.w500,),),
         ),
         actions: [
           Padding(
