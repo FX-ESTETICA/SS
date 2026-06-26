@@ -11,7 +11,7 @@ dependencies:
     sdk: flutter
   # 图片处理
   image_picker: ^1.1.2       # 基础媒体选择
-  image_cropper: ^8.0.2      # 沉浸式端侧裁剪
+  image_cropper: ^12.2.1      # 沉浸式端侧裁剪
   flutter_image_compress: ^2.4.0 # 端侧极限压缩 (WebP, C++ 底层)
   # 视频处理
   video_player: ^2.8.6       # 视频预览

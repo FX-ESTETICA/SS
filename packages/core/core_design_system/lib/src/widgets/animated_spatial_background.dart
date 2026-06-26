@@ -27,7 +27,8 @@ class _AnimatedSpatialBackgroundState extends State<AnimatedSpatialBackground> {
   Future<void> _loadShader() async {
     try {
       final program = await ui.FragmentProgram.fromAsset(
-          'packages/core_design_system/shaders/aurora_flow.frag',);
+        'packages/core_design_system/shaders/aurora_flow.frag',
+      );
       if (mounted) {
         setState(() {
           _program = program;
@@ -57,8 +58,10 @@ class _AnimatedSpatialBackgroundState extends State<AnimatedSpatialBackground> {
                   // 硬件图层隔离，防止其他组件的频繁重绘波及 Shader
                   child: CustomPaint(
                     // 将 Notifier 传入 Painter，实现真正的旁路渲染 (Bypass Rendering)
-                    painter: _AuroraShaderPainter(_program!,
-                        BackgroundManager.instance.globalTimeNotifier,),
+                    painter: _AuroraShaderPainter(
+                      _program!,
+                      BackgroundManager.instance.globalTimeNotifier,
+                    ),
                   ),
                 ),
               )

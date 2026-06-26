@@ -104,7 +104,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
 
   Future<void> _fetchProducts() async {
     try {
-      final data = await SupabaseService.instance.fetchProducts();
+      final data = await SupabaseService.fetchProducts(limit: 20);
       if (mounted) {
         setState(() {
           final fetchedProducts =
@@ -152,9 +152,30 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
       '网红餐饮': ['招牌经典双人特惠套餐', '招牌牛蛙酸菜鱼套餐', '网红瀑布冰沙拿铁', '黯然销魂小龙虾'],
       '精品咖啡': ['西班牙拿铁', '桂花燕麦拿铁', '冷萃冰滴咖啡', '手冲瑰夏咖啡豆'],
       '深夜酒吧': ['百威纯生精酿畅饮', '长岛冰茶特调鸡尾酒', '莫吉托微醺套餐', '德式烤肠拼盘'],
-      '为你推荐': ['2026新款降噪蓝牙耳机', '护眼级人体工学办公椅', '无绳跳绳燃脂健身', '便携式迷你筋膜枪', '桌面加湿器', '复古黑胶唱片机'],
-      '数码极客': ['AirPods Pro 2代', '罗技机械键盘茶轴', '雷蛇无线游戏鼠标', '大疆头戴式运动相机', 'GaN 120W氮化镓快充', '便携式磁吸充电宝'],
-      '潮流服饰': ['纯棉重磅宽松T恤', '复古直筒阔腿牛仔裤', '防晒冰丝透气外套', '阿甘鞋复古慢跑鞋', '极简无痕保暖内衣', '防水户外冲锋衣'],
+      '为你推荐': [
+        '2026新款降噪蓝牙耳机',
+        '护眼级人体工学办公椅',
+        '无绳跳绳燃脂健身',
+        '便携式迷你筋膜枪',
+        '桌面加湿器',
+        '复古黑胶唱片机',
+      ],
+      '数码极客': [
+        'AirPods Pro 2代',
+        '罗技机械键盘茶轴',
+        '雷蛇无线游戏鼠标',
+        '大疆头戴式运动相机',
+        'GaN 120W氮化镓快充',
+        '便携式磁吸充电宝',
+      ],
+      '潮流服饰': [
+        '纯棉重磅宽松T恤',
+        '复古直筒阔腿牛仔裤',
+        '防晒冰丝透气外套',
+        '阿甘鞋复古慢跑鞋',
+        '极简无痕保暖内衣',
+        '防水户外冲锋衣',
+      ],
       '品质家居': ['泰国进口乳胶枕', '智能感应垃圾桶', '北欧极简落地灯', '记忆棉护腰靠垫', '除螨吸尘器', '陶瓷不粘平底锅'],
       '附近服务': ['极速上门开锁换锁', '管道疏通/漏水维修', '家庭电路检测维修', '同城加急文件快送'],
       '上门保洁': ['日常深度保洁 3小时', '新居开荒保洁特惠', '厨房油烟机深度清洗', '全屋玻璃双面擦洗'],
@@ -190,7 +211,8 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
       for (int i = 0; i < 6; i++) {
         mocks.add(
           ProductModel(
-            title: realProductTitles[sub]?[i % 6] ?? '$sub - 2026新款降维打击极品 ${i + 1}',
+            title: realProductTitles[sub]?[i % 6] ??
+                '$sub - 2026新款降维打击极品 ${i + 1}',
             imageUrl: 'https://picsum.photos/id/${200 + i * 10}/400/600', // 竖向
             price: 199.0 + (i * 200),
             salesCount: 1000 + i * 300,
@@ -329,7 +351,8 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
                 else if (_errorMessage != null)
                   SliverToBoxAdapter(
                     child: Center(
-                      child: Text(_errorMessage!, style: AppTypography.bodyLarge),
+                      child:
+                          Text(_errorMessage!, style: AppTypography.bodyLarge),
                     ),
                   )
                 else
@@ -970,7 +993,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
                         fontSize: 11, // 减小字号
                         fontWeight: FontWeight.w500,
                       ),
-                    ), // 强制纯黑
+                    ),
                   ),
                 ],
               ),

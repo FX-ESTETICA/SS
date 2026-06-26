@@ -1,13 +1,17 @@
-# melos_managed_dependency_overrides: core_design_system,core_local_db,core_network,feature_shop,feature_video,feature_im
+# melos_managed_dependency_overrides: core_design_system,core_local_db,core_media,core_network,feature_im,feature_profile,feature_shop,feature_video
 dependency_overrides:
   core_design_system:
     path: ..\\..\\packages\\core\\core_design_system
   core_local_db:
     path: ..\\..\\packages\\core\\core_local_db
+  core_media:
+    path: ..\\..\\packages\\core\\core_media
   core_network:
     path: ..\\..\\packages\\core\\core_network
   feature_im:
     path: ..\\..\\packages\\features\\feature_im
+  feature_profile:
+    path: ..\\..\\packages\\features\\feature_profile
   feature_shop:
     path: ..\\..\\packages\\features\\feature_shop
   feature_video:

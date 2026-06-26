@@ -7,6 +7,9 @@ import 'package:feature_im/feature_im.dart';
 import 'package:feature_profile/feature_profile.dart';
 import 'package:media_kit/media_kit.dart'; // 引入顶级播放器引擎
 import 'package:window_manager/window_manager.dart';
+import 'router/app_router.dart';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 void main() async {
   // 确保 Flutter 引擎完全绑定，这是初始化云端服务的前提
@@ -45,8 +48,12 @@ void main() async {
   // 2. 初始化全局基础设置 (网络API、本地数据库引擎等)
   final apiClient = ApiClient(baseUrl: 'https://api.zhixuan.global');
 
-  // 3. 启动超级 APP 主引擎
-  runApp(ZhixuanSuperApp(apiClient: apiClient));
+  // 3. 启动超级 APP 主引擎，并注入 ProviderScope (Riverpod 的绝对中枢)
+  runApp(
+    ProviderScope(
+      child: ZhixuanSuperApp(apiClient: apiClient),
+    ),
+  );
 }
 
 class ZhixuanSuperApp extends StatelessWidget {
@@ -62,12 +69,12 @@ class ZhixuanSuperApp extends StatelessWidget {
       onPointerMove: (_) => BackgroundManager.instance.notifyInteraction(),
       onPointerUp: (_) => BackgroundManager.instance.notifyInteraction(),
       behavior: HitTestBehavior.translucent,
-      child: MaterialApp(
+      child: MaterialApp.router(
         title: '智选 (Zhixuan)',
         // 强制使用底层设计系统中定义的主题，彻底杜绝 UI 碎片化
         theme: AppTheme.lightTheme,
         debugShowCheckedModeBanner: false,
-        home: const SuperAppShell(),
+        routerConfig: appRouter,
       ),
     );
   }
@@ -75,14 +82,14 @@ class ZhixuanSuperApp extends StatelessWidget {
 
 /// 超级 APP 的主外壳 (Shell)
 /// 未来微信、淘宝、抖音模块都会被动态挂载到这里的不同 Tab 中
-class SuperAppShell extends StatefulWidget {
-  const SuperAppShell({super.key});
+class MainScreen extends StatefulWidget {
+  const MainScreen({super.key});
 
   @override
-  State<SuperAppShell> createState() => _SuperAppShellState();
+  State<MainScreen> createState() => _MainScreenState();
 }
 
-class _SuperAppShellState extends State<SuperAppShell> {
+class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
 
   @override
@@ -228,4 +235,3 @@ class _SuperAppShellState extends State<SuperAppShell> {
     );
   }
 }
-

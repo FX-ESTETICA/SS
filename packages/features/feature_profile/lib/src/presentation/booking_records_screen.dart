@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:core_design_system/core_design_system.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:feature_shop/feature_shop.dart'; // 引入商城模块以获取 ProductModel 和详情页
+import 'package:go_router/go_router.dart';
 
 class BookingRecordsScreen extends StatefulWidget {
   const BookingRecordsScreen({super.key});
@@ -44,40 +44,16 @@ class _BookingRecordsScreenState extends State<BookingRecordsScreen> {
                       crossAxisCount: crossAxisCount,
                       mainAxisSpacing: 16,
                       crossAxisSpacing: 16,
-                      childAspectRatio: width / crossAxisCount / 180, // 动态计算宽高比，让高度固定在 180 左右
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      childAspectRatio:
+                          width / crossAxisCount / 180, // 动态计算宽高比，让高度固定在 180 左右
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 8,
+                      ),
                       physics: const BouncingScrollPhysics(),
                       children: _selectedTabIndex == 0
-                          ? [
-                              // Tab 0: 预约记录
-                              _buildPendingCard(),
-                              _buildCompletedCard(),
-                              _buildCancelledCard(),
-                            ]
-                          : [
-                              // Tab 1: 消费记录
-                              _buildConsumptionCard(
-                                shopName: '智选官方直营',
-                                shopImageUrl: 'https://picsum.photos/id/210/800/450',
-                                serviceName: '高级剪发套餐',
-                                date: '2023-10-25 15:30',
-                                amount: '128.00',
-                              ),
-                              _buildConsumptionCard(
-                                shopName: '罗马阳光直邮',
-                                shopImageUrl: 'https://picsum.photos/id/101/800/450',
-                                serviceName: '意大利进口洗发水',
-                                date: '2023-10-20 11:00',
-                                amount: '356.00',
-                              ),
-                              _buildConsumptionCard(
-                                shopName: '极速出行',
-                                shopImageUrl: 'https://picsum.photos/id/310/800/450',
-                                serviceName: '深度保洁服务',
-                                date: '2023-09-12 14:00',
-                                amount: '299.00',
-                              ),
-                            ],
+                          ? _buildBookingRecords(width)
+                          : _buildConsumptionRecords(width),
                     );
                   },
                 ),
@@ -87,6 +63,40 @@ class _BookingRecordsScreenState extends State<BookingRecordsScreen> {
         ),
       ),
     );
+  }
+
+  List<Widget> _buildBookingRecords(double width) {
+    return [
+      _buildPendingCard(),
+      _buildCompletedCard(),
+      _buildCancelledCard(),
+    ];
+  }
+
+  List<Widget> _buildConsumptionRecords(double width) {
+    return [
+      _buildConsumptionCard(
+        shopName: '智选官方直营',
+        shopImageUrl: 'https://picsum.photos/id/210/800/450',
+        serviceName: '高级剪发套餐',
+        date: '2023-10-25 15:30',
+        amount: '128.00',
+      ),
+      _buildConsumptionCard(
+        shopName: '罗马阳光直邮',
+        shopImageUrl: 'https://picsum.photos/id/101/800/450',
+        serviceName: '意大利进口洗发水',
+        date: '2023-10-20 11:00',
+        amount: '356.00',
+      ),
+      _buildConsumptionCard(
+        shopName: '极速出行',
+        shopImageUrl: 'https://picsum.photos/id/310/800/450',
+        serviceName: '深度保洁服务',
+        date: '2023-09-12 14:00',
+        amount: '299.00',
+      ),
+    ];
   }
 
   Widget _buildTopBar() {
@@ -256,7 +266,7 @@ class _BookingRecordsScreenState extends State<BookingRecordsScreen> {
             style: const TextStyle(
               color: Colors.white,
               fontSize: 22, // 金额使用稍大字号突出
-              fontWeight: FontWeight.w800, // 稍微加粗
+              fontWeight: FontWeight.w500, // 严禁使用 w600+，遵循项目架构规范
             ),
           ),
         ],
@@ -275,26 +285,15 @@ class _BookingRecordsScreenState extends State<BookingRecordsScreen> {
   }) {
     return GestureDetector(
       onTap: () {
-        // 构建一个模拟的 ProductModel 并跳转到服务详情页
-        final mockProduct = ProductModel(
-          title: serviceName,
-          imageUrl: shopImageUrl,
-          mediaUrls: [shopImageUrl],
-          price: 0,
-          salesCount: 0,
-          shopName: shopName,
-          category: '2', // 生活服务
-          subCategory: '附近服务',
-        );
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => LocalServiceDetailScreen(
-              product: mockProduct,
-              isStore: false,
-              isMerchantMode: false, // 消费者视角
-            ),
-          ),
+        // @AI_CONTEXT: [2026-06-26] 通过 go_router 彻底解耦，跳转到商家详情页。
+        // 将所需的参数通过 extra 或 query 参数传递给主工程的 router，避免对 feature_shop 的硬依赖。
+        context.push(
+          '/shop/detail',
+          extra: {
+            'serviceName': serviceName,
+            'shopImageUrl': shopImageUrl,
+            'shopName': shopName,
+          },
         );
       },
       child: Container(
@@ -310,10 +309,11 @@ class _BookingRecordsScreenState extends State<BookingRecordsScreen> {
             CachedNetworkImage(
               imageUrl: shopImageUrl,
               fit: BoxFit.cover,
-              errorWidget: (context, url, error) => Container(color: Colors.grey[900]),
+              errorWidget: (context, url, error) =>
+                  Container(color: Colors.grey[900]),
               placeholder: (context, url) => Container(color: Colors.grey[900]),
             ),
-            
+
             // 2. 遮罩层与内容层
             Container(
               // 添加渐变遮罩，确保底层白色文字清晰可见
@@ -339,9 +339,13 @@ class _BookingRecordsScreenState extends State<BookingRecordsScreen> {
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
-                          color: statusIsSolid ? Colors.white : Colors.transparent,
+                          color:
+                              statusIsSolid ? Colors.white : Colors.transparent,
                           border: statusIsSolid
                               ? null
                               : Border.all(color: Colors.white, width: 1.5),
@@ -381,13 +385,18 @@ class _BookingRecordsScreenState extends State<BookingRecordsScreen> {
                           Expanded(
                             child: Row(
                               children: [
-                                const Icon(Icons.access_time, color: Colors.white, size: 14),
+                                const Icon(
+                                  Icons.access_time,
+                                  color: Colors.white,
+                                  size: 14,
+                                ),
                                 const SizedBox(width: 4),
                                 Expanded(
                                   child: Text(
                                     date,
                                     style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.8), // 时间稍弱化
+                                      color: Colors.white
+                                          .withValues(alpha: 0.8), // 时间稍弱化
                                       fontSize: 12,
                                       fontWeight: FontWeight.w400,
                                     ),
@@ -398,7 +407,7 @@ class _BookingRecordsScreenState extends State<BookingRecordsScreen> {
                               ],
                             ),
                           ),
-                          if (bottomContent != null) 
+                          if (bottomContent != null)
                             Padding(
                               padding: const EdgeInsets.only(left: 8.0),
                               child: bottomContent,
@@ -453,5 +462,3 @@ class _BookingRecordsScreenState extends State<BookingRecordsScreen> {
     );
   }
 }
-
-

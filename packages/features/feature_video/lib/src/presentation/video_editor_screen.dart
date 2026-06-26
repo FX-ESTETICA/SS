@@ -1,4 +1,4 @@
-﻿import 'dart:io';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_editor/video_editor.dart';
 import 'package:core_media/core_media.dart'; // 引入我们刚才写的底层处理引擎
@@ -89,7 +89,7 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
 
         // 2. 上传至 R2 存储
         String videoUrl =
-            await SupabaseService.instance.uploadMedia(fileName, videoBytes);
+            await SupabaseService.uploadMedia(fileName, videoBytes);
 
         // 如果云端 R2 没配好返回了静态兜底，为了让用户能立刻看到刚发的视频，强制替换为本地绝对路径
         if (videoUrl.contains('test_video_1.mp4')) {
@@ -101,10 +101,10 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
         });
 
         // 3. 写入 Supabase 数据库
-        final user = SupabaseService.instance.currentUser;
+        final user = SupabaseService.currentUser;
         final authorName = user?.email?.split('@').first ?? '@匿名极客';
 
-        await SupabaseService.instance.publishVideo(
+        await SupabaseService.publishVideo(
           videoUrl: videoUrl,
           description: '刚刚通过智选超级 APP 极限压缩上传了这条视频！🚀',
           authorName: authorName,

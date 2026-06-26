@@ -1,10 +1,11 @@
-﻿import 'dart:math' as math;
+import 'dart:math' as math;
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:core_design_system/core_design_system.dart';
 import 'package:core_media/core_media.dart';
 import 'package:core_network/core_network.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// 真正的十二星座几何连线图绘制器 (Constellation Art)
 class ZodiacConstellationPainter extends CustomPainter {
@@ -92,13 +93,13 @@ class ZodiacConstellationPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class ProfileScreen extends StatefulWidget {
+class ProfileScreen extends ConsumerStatefulWidget {
   final VoidCallback? onLoginSuccess;
 
   const ProfileScreen({super.key, this.onLoginSuccess});
 
   @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
+  ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
 }
 
 /// 绘制头像外围的极光半边框与星图连线
@@ -171,7 +172,7 @@ class ConstellationBorderPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class _ProfileScreenState extends State<ProfileScreen>
+class _ProfileScreenState extends ConsumerState<ProfileScreen>
     with SingleTickerProviderStateMixin {
   bool _showPasswordInput = false;
   bool _obscurePassword = true;
@@ -189,8 +190,9 @@ class _ProfileScreenState extends State<ProfileScreen>
     super.initState();
 
     // 监听全局登录状态变化
+    // @AI_CONTEXT: [2026-06-26] 使用 Riverpod 监听登录状态
     _authSubscription =
-        SupabaseService.instance.onAuthStateChange.listen((data) {
+        ref.read(supabaseProvider).auth.onAuthStateChange.listen((data) {
       if (mounted) {
         setState(() {}); // 刷新 UI
         if (_checkIsLoggedIn()) {
@@ -209,10 +211,12 @@ class _ProfileScreenState extends State<ProfileScreen>
       _isLoadingVideos = true;
     });
     try {
-      final user = SupabaseService.instance.currentUser;
-      final authorName = user?.email?.split('@').first ?? '';
+      final user = SupabaseService.currentUser;
+      final authorName = user?.userMetadata?['display_name'] ??
+          user?.email?.split('@').first ??
+          '';
       if (authorName.isNotEmpty) {
-        final videos = await SupabaseService.instance.fetchMyVideos(authorName);
+        final videos = await SupabaseService.fetchMyVideos(authorName);
         if (mounted) {
           setState(() {
             _myVideos = videos;
@@ -243,7 +247,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   // 检查是否已登录 (真实连接 Supabase Auth)
-  bool _checkIsLoggedIn() => SupabaseService.instance.currentSession != null;
+  bool _checkIsLoggedIn() =>
+      ref.read(supabaseProvider).auth.currentSession != null;
 
   @override
   Widget build(BuildContext context) {
@@ -333,8 +338,11 @@ class _ProfileScreenState extends State<ProfileScreen>
           top: 40, // 增加 top 偏移，避开 40px 高度的 WindowCaption
           right: 16,
           child: IconButton(
-            icon: const Icon(Icons.settings_outlined,
-                color: Colors.white, size: 28,),
+            icon: const Icon(
+              Icons.settings_outlined,
+              color: Colors.white,
+              size: 28,
+            ),
             onPressed: _showSettingsSheet,
           ),
         ),
@@ -365,7 +373,8 @@ class _ProfileScreenState extends State<ProfileScreen>
             image: isLoggedIn
                 ? const DecorationImage(
                     image: NetworkImage(
-                        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',),
+                      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
+                    ),
                     fit: BoxFit.cover,
                   )
                 : null,
@@ -406,7 +415,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         // 问候语
         Text(
           isLoggedIn
-              ? '晚上好，${SupabaseService.instance.currentUser?.email?.split('@').first ?? ''}！'
+              ? '晚上好，${SupabaseService.currentUser?.email?.split('@').first ?? ''}！'
               : '欢迎，请登录',
           style: const TextStyle(
             color: Colors.white,
@@ -421,7 +430,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   /// 登录后的顶部 Header：左侧星座、居中头像、右侧生活ID
   Widget _buildLoggedInHeader() {
-    final user = SupabaseService.instance.currentUser;
+    final user = SupabaseService.currentUser;
     final metadata = user?.userMetadata ?? {};
     final avatarUrl = metadata['avatar_url'] as String? ??
         'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80';
@@ -445,12 +454,15 @@ class _ProfileScreenState extends State<ProfileScreen>
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Text('双子座',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          letterSpacing: 2,
-                          fontWeight: FontWeight.w300,),),
+                  const Text(
+                    '双子座',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      letterSpacing: 2,
+                      fontWeight: FontWeight.w300,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -493,19 +505,25 @@ class _ProfileScreenState extends State<ProfileScreen>
             child: Center(
               child: Column(
                 children: [
-                  const Text('生活',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: 2,),),
+                  const Text(
+                    '生活',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 2,
+                    ),
+                  ),
                   const SizedBox(height: 8),
-                  Text('ID: $userId9',
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          letterSpacing: 1,
-                          fontWeight: FontWeight.w300,),),
+                  Text(
+                    'ID: $userId9',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      letterSpacing: 1,
+                      fontWeight: FontWeight.w300,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -532,20 +550,19 @@ class _ProfileScreenState extends State<ProfileScreen>
       if (compressedFile == null) return;
 
       // 上传到 Supabase Storage
-      final user = SupabaseService.instance.currentUser;
+      final user = SupabaseService.currentUser;
       if (user == null) return;
 
       final fileName =
           'avatar_${user.id}_${DateTime.now().millisecondsSinceEpoch}.webp';
       final fileBytes = await compressedFile.readAsBytes();
 
-      final avatarUrl =
-          await SupabaseService.instance.uploadMedia(fileName, fileBytes);
+      final avatarUrl = await SupabaseService.uploadMedia(fileName, fileBytes);
 
       // 更新 Metadata
       final metadata = Map<String, dynamic>.from(user.userMetadata ?? {});
       metadata['avatar_url'] = avatarUrl;
-      await SupabaseService.instance.updateUserMetadata(metadata);
+      await SupabaseService.updateUserMetadata(metadata);
 
       if (mounted) setState(() {});
     } catch (e) {
@@ -558,7 +575,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   /// 登录后的名字与个性签名
   Widget _buildUserInfo() {
-    final user = SupabaseService.instance.currentUser;
+    final user = SupabaseService.currentUser;
     final metadata = user?.userMetadata ?? {};
     final userName = metadata['display_name'] as String? ??
         user?.email?.split('@').first ??
@@ -582,8 +599,11 @@ class _ProfileScreenState extends State<ProfileScreen>
             const SizedBox(width: 8),
             GestureDetector(
               onTap: _updateDisplayName,
-              child: Icon(Icons.history_edu,
-                  color: Colors.white.withValues(alpha: 0.8), size: 24,),
+              child: Icon(
+                Icons.history_edu,
+                color: Colors.white.withValues(alpha: 0.8),
+                size: 24,
+              ),
             ),
           ],
         ),
@@ -617,9 +637,11 @@ class _ProfileScreenState extends State<ProfileScreen>
               hintText: '请输入新昵称',
               hintStyle: TextStyle(color: Colors.white54),
               enabledBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(color: Colors.white24),),
+                borderSide: BorderSide(color: Colors.white24),
+              ),
               focusedBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(color: Colors.white),),
+                borderSide: BorderSide(color: Colors.white),
+              ),
             ),
           ),
           actions: [
@@ -637,12 +659,12 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
 
     if (result != null && result.trim().isNotEmpty) {
-      final user = SupabaseService.instance.currentUser;
+      final user = SupabaseService.currentUser;
       final metadata = Map<String, dynamic>.from(user?.userMetadata ?? {});
       metadata['display_name'] = result.trim();
 
       try {
-        await SupabaseService.instance.updateUserMetadata(metadata);
+        await SupabaseService.updateUserMetadata(metadata);
         if (mounted) setState(() {});
       } catch (e) {
         if (mounted) {
@@ -670,7 +692,10 @@ class _ProfileScreenState extends State<ProfileScreen>
             '暂无发布动态\n点击底部 "+" 号发布第一条短视频吧',
             textAlign: TextAlign.center,
             style: TextStyle(
-                color: Colors.white, height: 1.5, fontWeight: FontWeight.w300,),
+              color: Colors.white,
+              height: 1.5,
+              fontWeight: FontWeight.w300,
+            ),
           ),
         ),
       );
@@ -697,8 +722,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                 Container(
                   color: Colors.black,
                   child: const Center(
-                    child: Icon(Icons.video_library_outlined,
-                        color: Colors.white, size: 48,),
+                    child: Icon(
+                      Icons.video_library_outlined,
+                      color: Colors.white,
+                      size: 48,
+                    ),
                   ),
                 ),
                 // 底部信息遮罩
@@ -760,17 +788,22 @@ class _ProfileScreenState extends State<ProfileScreen>
                 // border: Border(left: BorderSide(color: Colors.white.withValues(alpha: 0.1))), // 移除左侧细线，更纯粹
               ),
               padding: EdgeInsets.only(
-                  top: MediaQuery.of(context).padding.top + 24, bottom: 40,),
+                top: MediaQuery.of(context).padding.top + 24,
+                bottom: 40,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                    child: Text('设置',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 24,
-                            fontWeight: FontWeight.w500,),),
+                    child: Text(
+                      '设置',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                   ),
                   const Divider(color: Colors.white10, height: 1),
                   const SizedBox(height: 16),
@@ -783,11 +816,17 @@ class _ProfileScreenState extends State<ProfileScreen>
                   _buildSettingsItem('更改邮箱', Icons.email_outlined),
                   const Spacer(),
                   const Divider(color: Colors.white10, height: 32),
-                  _buildSettingsItem('退出账号', Icons.logout,
-                      color: Colors.redAccent,),
+                  _buildSettingsItem(
+                    '退出账号',
+                    Icons.logout,
+                    color: Colors.redAccent,
+                  ),
                   const SizedBox(height: 16),
-                  _buildSettingsItem('注销账号', Icons.delete_forever,
-                      color: Colors.white,),
+                  _buildSettingsItem(
+                    '注销账号',
+                    Icons.delete_forever,
+                    color: Colors.white,
+                  ),
                 ],
               ),
             ),
@@ -800,7 +839,8 @@ class _ProfileScreenState extends State<ProfileScreen>
             begin: const Offset(1, 0), // 从右向左滑入
             end: Offset.zero,
           ).animate(
-              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),),
+            CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+          ),
           child: child,
         );
       },
@@ -816,15 +856,21 @@ class _ProfileScreenState extends State<ProfileScreen>
           children: [
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-              child: Text('背景主题',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w300,),),
+              child: Text(
+                '背景主题',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w300,
+                ),
+              ),
             ),
             _buildThemeOption('极简纯黑', BackgroundType.pureBlack, currentType),
             _buildThemeOption(
-                '动态流光', BackgroundType.dynamicAurora, currentType,),
+              '动态流光',
+              BackgroundType.dynamicAurora,
+              currentType,
+            ),
           ],
         );
       },
@@ -832,26 +878,35 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildThemeOption(
-      String title, BackgroundType type, BackgroundType currentType,) {
+    String title,
+    BackgroundType type,
+    BackgroundType currentType,
+  ) {
     final isSelected = currentType == type;
     return ListTile(
       leading: Icon(
         isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
         color: Colors.white,
       ),
-      title: Text(title,
-          style: TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: isSelected ? FontWeight.w500 : FontWeight.w300,),),
+      title: Text(
+        title,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 16,
+          fontWeight: isSelected ? FontWeight.w500 : FontWeight.w300,
+        ),
+      ),
       onTap: () {
         BackgroundManager.instance.setBackground(type);
       },
     );
   }
 
-  Widget _buildSettingsItem(String title, IconData icon,
-      {Color color = Colors.white,}) {
+  Widget _buildSettingsItem(
+    String title,
+    IconData icon, {
+    Color color = Colors.white,
+  }) {
     return ListTile(
       leading: Icon(icon, color: color),
       title: Text(title, style: TextStyle(color: color, fontSize: 16)),
@@ -859,7 +914,20 @@ class _ProfileScreenState extends State<ProfileScreen>
         Navigator.pop(context);
         // 如果是退出，调用真实的退出逻辑
         if (title == '退出账号') {
-          await SupabaseService.instance.signOut();
+          // @AI_CONTEXT: [2026-06-26] 使用 fpdart 的 fold 来处理退出登录的返回结果
+          final result = await ref.read(authRepositoryProvider).signOut().run();
+          result.fold(
+            (failure) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(failure.message)),
+                );
+              }
+            },
+            (_) {
+              // 登出成功，UI 会通过 _authSubscription 自动重绘，这里不需要额外操作
+            },
+          );
         }
       },
     );
@@ -904,8 +972,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                   shape: BoxShape.circle,
                 ),
                 child: IconButton(
-                  icon: const Icon(Icons.arrow_forward,
-                      color: Colors.black, size: 20,),
+                  icon: const Icon(
+                    Icons.arrow_forward,
+                    color: Colors.black,
+                    size: 20,
+                  ),
                   onPressed: () {
                     if (_emailController.text.isNotEmpty) {
                       setState(() {
@@ -924,14 +995,18 @@ class _ProfileScreenState extends State<ProfileScreen>
         Row(
           children: [
             Expanded(
-                child: Divider(color: Colors.white.withValues(alpha: 0.1)),),
+              child: Divider(color: Colors.white.withValues(alpha: 0.1)),
+            ),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Text('或使用以下方式',
-                  style: TextStyle(color: Colors.white38, fontSize: 12),),
+              child: Text(
+                '或使用以下方式',
+                style: TextStyle(color: Colors.white38, fontSize: 12),
+              ),
             ),
             Expanded(
-                child: Divider(color: Colors.white.withValues(alpha: 0.1)),),
+              child: Divider(color: Colors.white.withValues(alpha: 0.1)),
+            ),
           ],
         ),
         const SizedBox(height: 24),
@@ -970,8 +1045,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                   _showPasswordInput = false; // 返回修改邮箱
                 });
               },
-              child: const Icon(Icons.edit_outlined,
-                  color: Colors.white54, size: 18,),
+              child: const Icon(
+                Icons.edit_outlined,
+                color: Colors.white54,
+                size: 18,
+              ),
             ),
           ],
         ),
@@ -1021,10 +1099,13 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ? const Padding(
                       padding: EdgeInsets.all(12.0),
                       child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                              color: Colors.white, strokeWidth: 2,),),
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      ),
                     )
                   : Container(
                       width: 44,
@@ -1034,8 +1115,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                         shape: BoxShape.circle,
                       ),
                       child: IconButton(
-                        icon: const Icon(Icons.arrow_forward,
-                            color: Colors.black, size: 20,),
+                        icon: const Icon(
+                          Icons.arrow_forward,
+                          color: Colors.black,
+                          size: 20,
+                        ),
                         onPressed: _performLoginOrRegister,
                       ),
                     ),
@@ -1043,6 +1127,43 @@ class _ProfileScreenState extends State<ProfileScreen>
           ),
         ),
       ],
+    );
+  }
+
+  /// 执行注册逻辑
+  Future<void> _performSignUp() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+    if (email.isEmpty || password.isEmpty) return;
+
+    setState(() {
+      _isLoggingIn = true;
+    });
+
+    // @AI_CONTEXT: [2026-06-26] 彻底摒弃 try-catch，使用 Riverpod 注入的 AuthRepository 与 TaskEither 进行纯函数式处理
+    final result = await ref
+        .read(authRepositoryProvider)
+        .signUpWithEmailPassword(
+          email: email,
+          password: password,
+        )
+        .run();
+
+    if (!mounted) return;
+
+    result.fold(
+      (failure) {
+        setState(() => _isLoggingIn = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(failure.message)),
+        );
+      },
+      (authResponse) {
+        setState(() => _isLoggingIn = false);
+        if (widget.onLoginSuccess != null) {
+          widget.onLoginSuccess!();
+        }
+      },
     );
   }
 
@@ -1055,33 +1176,36 @@ class _ProfileScreenState extends State<ProfileScreen>
       _isLoggingIn = true;
     });
 
-    try {
-      // 尝试登录
-      await SupabaseService.instance.signInWithEmailPassword(email, password);
-      if (mounted && widget.onLoginSuccess != null) {
-        widget.onLoginSuccess!();
-      }
-    } catch (e) {
-      // 如果登录失败，尝试直接作为新用户注册
-      try {
-        await SupabaseService.instance.signUpWithEmailPassword(email, password);
-        if (mounted && widget.onLoginSuccess != null) {
-          widget.onLoginSuccess!();
-        }
-      } catch (signUpError) {
-        if (mounted) {
+    // @AI_CONTEXT: [2026-06-26] 彻底摒弃 try-catch，使用 Riverpod + fpdart 进行安全处理
+    final result = await ref
+        .read(authRepositoryProvider)
+        .signInWithEmailPassword(
+          email: email,
+          password: password,
+        )
+        .run();
+
+    if (!mounted) return;
+
+    result.fold(
+      (failure) {
+        setState(() => _isLoggingIn = false);
+        // 如果错误提示是未注册（这里可以更优雅地通过错误码判断，为演示简写）
+        if (failure.message.contains('Invalid login credentials')) {
+          _performSignUp();
+        } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('登录/注册失败: ${signUpError.toString()}')),
+            SnackBar(content: Text(failure.message)),
           );
         }
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoggingIn = false;
-        });
-      }
-    }
+      },
+      (authResponse) {
+        setState(() => _isLoggingIn = false);
+        if (widget.onLoginSuccess != null) {
+          widget.onLoginSuccess!();
+        }
+      },
+    );
   }
 
   /// 小型化第三方按钮

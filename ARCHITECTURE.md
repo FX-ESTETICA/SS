@@ -1,7 +1,12 @@
 # 智选超级 APP (Zhixuan Super App) - AI 核心记忆库 & 项目圣经
-**最后更新:** 2026-06-22
+**最后更新:** 2026-06-26
 
-> ⚠️ **AI 强制指令 (AI Handover Instructions):** 
+> ⚠️ **AI 强制指令 (Boot Sequence & Handover Instructions):** 
+> 0. **终极启动协议 (Boot Sequence):** 当用户发送“读取记忆”时，你必须静默执行以下连招：
+>    - 完整阅读本文件，铭记所有红线。
+>    - 执行 `git log -n 3` 了解最近的开发脉络。
+>    - 使用 `grep -r "@AI_CONTEXT" .` 和 `grep -r "@AI_CORE_MECHANISM" .` 全局扫描代码库中的隐式记忆锚点，将散落的代码锚点纳入上下文。
+>    - 回复用户：“记忆 100% 同步完毕。当前红线已锁定，代码锚点已加载。请指示下一步操作。”
 > 1. 当新会话开启并要求你读取此文件时，**你必须无条件遵循以下所有架构设计、技术栈约束和避坑指南**。
 > 2. 你还需要同时读取 `supabase/migrations/` 目录下的 SQL 文件，以获取当前最新的云端数据库真实结构，才能做到 100% 完美衔接开发。
 > 3. **绝对执行原则：完成 UI 或功能更新后，绝不要询问用户“是否需要编译预览”，也绝对禁止说“几秒钟搞定/稍等片刻”等废话。你必须静默地、直接在终端执行 `flutter run -d windows` （或者使用热重载），直接把浏览打开给用户看最终效果！**
@@ -105,3 +110,24 @@
 - **服务器 CPU 消耗为 0:** 压缩、转码、抽帧全部白嫖千万用户的手机终端算力。
 - **下行流量费 (Egress) 为 0:** 所有媒体资产压缩后直传 **Cloudflare R2** 边缘节点，配合全球 CDN 实现极速且免费的分发。
 - **渲染零掉帧:** 瀑布流无论滑动多快，必须采用**单一播放器实例视口检测 (Single Player Viewport Tracking)**，进入视口中心才挂载播放，滑出即销毁。
+
+## 8. 终极记忆规范：代码即记忆 (AI Anchors)
+为了保持记忆与代码的绝对同步，本项目采用“代码锚点”机制。不要在外部文档中维护容易过期的状态，而是直接在代码中埋入标签：
+- `@AI_CONTEXT`: 用于标记临时方案、技术债、或者特定业务逻辑的上下文。例如：`// @AI_CONTEXT: [2026-06-26] 临时依赖，下个版本用 go_router 解耦。`
+- `@AI_CORE_MECHANISM`: 用于标记核心底层机制（如零开销跑马灯、视频播放池），警告 AI 不要用常规思路去修改它。
+当 AI 接手开发时，会自动扫描这些标签获取上下文。开发过程中，如果做出非标架构决策，**必须在代码中留下对应的 AI 锚点注释**。
+
+## 9. 最新架构升级 (Architecture Evolution)
+**[2026-06-26] 第一步：终极解耦 (Zero Horizontal Coupling)**
+- 已全量引入 `go_router`。
+- `feature_profile` 和 `feature_shop` 之间的横向依赖已被彻底物理剥离。
+- 全局路由中枢位于 `apps/zhixuan_main/lib/router/app_router.dart`，所有的模块只和主工程发生路由交互。
+
+**[2026-06-26] 第二步：中枢神经 (Reactive State Hub)**
+- 已在 `zhixuan_main` 引入 `flutter_riverpod` 和 `riverpod_annotation`。
+- `main.dart` 中已包裹 `ProviderScope`，确立了全局状态和依赖注入 (DI) 的绝对中枢。
+- 后续开发需遵循 Riverpod 的响应式流范式，摒弃面条式事件回调。
+
+**[2026-06-26] 第三步：绝对防线 (DDD & Functional Error Handling)**
+- 核心网络层 `core_network` 引入了 `AppFailure` 领域错误基类和 `FutureEither<T>` 别名。
+- **强制约束：** 严禁在 UI 层使用 `try-catch`。所有的业务层方法必须返回 `FutureEither<T>`（即 `Future<Either<AppFailure, T>>`），UI 层必须通过 `.fold((error) => ..., (data) => ...)` 强制处理所有成功与失败的分支，从根本上杜绝未捕获异常导致的崩溃。

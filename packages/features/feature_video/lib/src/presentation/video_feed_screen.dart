@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:core_design_system/core_design_system.dart';
@@ -53,12 +53,12 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     VideoEnginePool.instance.initialize();
 
     _pageController = PageController();
-    _fetchVideosFromCloud();
+    _fetchVideos();
   }
 
-  Future<void> _fetchVideosFromCloud() async {
+  Future<void> _fetchVideos() async {
     try {
-      final data = await SupabaseService.instance.fetchVideos();
+      final data = await SupabaseService.fetchVideos();
       if (mounted) {
         setState(() {
           _videos.addAll(data.map((e) => VideoModel.fromJson(e)).toList());
@@ -144,7 +144,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
               onPressed: () {
                 setState(() => _isLoading = true);
                 _videos.clear();
-                _fetchVideosFromCloud();
+                _fetchVideos();
               },
               style:
                   ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
@@ -165,7 +165,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
           onRefresh: () async {
             setState(() => _isLoading = true);
             _videos.clear();
-            await _fetchVideosFromCloud();
+            await _fetchVideos();
           },
           child: PageView.builder(
             controller: _pageController,

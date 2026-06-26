@@ -9,9 +9,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  dio: ^5.4.0
-  fpdart: ^1.1.0 # 顶级架构必备：函数式错误处理，防止崩溃
+  dio: ^5.9.2
+  fpdart: ^1.2.0 # 顶级架构必备：函数式错误处理，防止崩溃
   supabase_flutter: ^2.4.3 # 接入全球最顶级的开源 Serverless 后端
+  flutter_riverpod: ^3.3.2
 
 dev_dependencies:
   flutter_lints: ^3.0.0

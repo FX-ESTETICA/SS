@@ -6,10 +6,10 @@ import 'typography.dart';
 class AppTheme {
   // 大厂跨平台标准中文字体回退链 (Apple -> Windows -> Android -> Web)
   static const List<String> _fontFamilyFallback = [
-    'PingFang SC',      // 苹果生态首选
-    'Microsoft YaHei',  // Windows 生态首选
-    'Helvetica Neue',   // 备用英文字体
-    'sans-serif',       // Web / Android 最终兜底
+    'PingFang SC', // 苹果生态首选
+    'Microsoft YaHei', // Windows 生态首选
+    'Helvetica Neue', // 备用英文字体
+    'sans-serif', // Web / Android 最终兜底
   ];
 
   static ThemeData get lightTheme {
