@@ -30,13 +30,14 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
       _cameras = await availableCameras();
       if (_cameras != null && _cameras!.isNotEmpty) {
         // 默认查找前置摄像头
-        _selectedCameraIndex = _cameras!.indexWhere((c) => c.lensDirection == CameraLensDirection.front);
+        _selectedCameraIndex = _cameras!
+            .indexWhere((c) => c.lensDirection == CameraLensDirection.front);
         if (_selectedCameraIndex == -1) {
           _selectedCameraIndex = 0; // 如果没有前置，则回退到第一个（通常是后置）
         }
         await _setupCameraController();
       } else {
-         debugPrint('No cameras found.');
+        debugPrint('No cameras found.');
       }
     } catch (e) {
       debugPrint('Camera init error: $e');
@@ -77,7 +78,9 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
   }
 
   Future<void> _toggleRecording() async {
-    if (_cameraController == null || !_cameraController!.value.isInitialized) return;
+    if (_cameraController == null || !_cameraController!.value.isInitialized) {
+      return;
+    }
 
     if (_isRecording) {
       // 停止录制
@@ -105,7 +108,7 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
 
   void _goToEditor(File file) {
     if (!mounted) return;
-    
+
     // 强制使用 pushReplacement 或者延迟一点，避免与系统的相册 Picker 生命周期冲突
     Future.microtask(() {
       if (!mounted) return;
@@ -125,7 +128,8 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
       body: Stack(
         children: [
           // 1. 相机全屏预览区
-          if (_cameraController != null && _cameraController!.value.isInitialized)
+          if (_cameraController != null &&
+              _cameraController!.value.isInitialized)
             Container(
               width: double.infinity,
               height: double.infinity,
@@ -148,11 +152,16 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white, size: 28),
+                    icon:
+                        const Icon(Icons.close, color: Colors.white, size: 28),
                     onPressed: () => Navigator.pop(context),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.flip_camera_ios, color: Colors.white, size: 28),
+                    icon: const Icon(
+                      Icons.flip_camera_ios,
+                      color: Colors.white,
+                      size: 28,
+                    ),
                     onPressed: _flipCamera,
                   ),
                 ],
@@ -190,7 +199,8 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
                         height: _isRecording ? 30 : 60,
                         decoration: BoxDecoration(
                           color: _isRecording ? Colors.red : Colors.white,
-                          borderRadius: BorderRadius.circular(_isRecording ? 8 : 30),
+                          borderRadius:
+                              BorderRadius.circular(_isRecording ? 8 : 30),
                         ),
                       ),
                     ),
@@ -211,12 +221,20 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(color: Colors.white, width: 1),
                         ),
-                        child: const Icon(Icons.photo_library, color: Colors.white, size: 20),
+                        child: const Icon(
+                          Icons.photo_library,
+                          color: Colors.white,
+                          size: 20,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       const Text(
                         '相册',
-                        style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ],
                   ),
@@ -233,7 +251,8 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
                 child: Padding(
                   padding: const EdgeInsets.only(top: 16.0),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       color: Colors.red.withValues(alpha: 0.8),
                       borderRadius: BorderRadius.circular(12),
@@ -241,9 +260,20 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.fiber_manual_record, color: Colors.white, size: 12),
+                        Icon(
+                          Icons.fiber_manual_record,
+                          color: Colors.white,
+                          size: 12,
+                        ),
                         SizedBox(width: 4),
-                        Text('录制中', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                        Text(
+                          '录制中',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ],
                     ),
                   ),

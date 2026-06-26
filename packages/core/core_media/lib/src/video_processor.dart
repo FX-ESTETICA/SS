@@ -35,7 +35,7 @@ class VideoProcessor {
 
     final tempDir = Directory.systemTemp;
     final timestamp = DateTime.now().millisecondsSinceEpoch;
-    
+
     final targetVideoPath = '${tempDir.path}/${timestamp}_compressed.mp4';
     final targetCoverPath = '${tempDir.path}/${timestamp}_cover.webp';
 
@@ -46,8 +46,9 @@ class VideoProcessor {
     // -c:v libx264 : 使用 H.264 编码 (保证全平台兼容)
     // -crf 28 : 控制画质和体积平衡，数字越大体积越小画质越低
     // -preset veryfast : 转码速度优先
-    final videoCmd = '-ss $startTimeSeconds -i "$sourcePath" -t $maxDurationSeconds -vf scale=-2:720 -c:v libx264 -crf 28 -preset veryfast -c:a aac -b:a 128k "$targetVideoPath"';
-    
+    final videoCmd =
+        '-ss $startTimeSeconds -i "$sourcePath" -t $maxDurationSeconds -vf scale=-2:720 -c:v libx264 -crf 28 -preset veryfast -c:a aac -b:a 128k "$targetVideoPath"';
+
     // 执行视频转码
     FFmpegSession videoSession = await FFmpegKit.execute(videoCmd);
     final videoReturnCode = await videoSession.getReturnCode();
@@ -61,8 +62,9 @@ class VideoProcessor {
     // -ss : 跳转到指定时间
     // -vframes 1 : 仅抽取 1 帧
     // -c:v libwebp : 编码为 WebP
-    final coverCmd = '-ss $coverTimeSeconds -i "$sourcePath" -vframes 1 -c:v libwebp "$targetCoverPath"';
-    
+    final coverCmd =
+        '-ss $coverTimeSeconds -i "$sourcePath" -vframes 1 -c:v libwebp "$targetCoverPath"';
+
     // 执行封面抽取
     FFmpegSession coverSession = await FFmpegKit.execute(coverCmd);
     final coverReturnCode = await coverSession.getReturnCode();

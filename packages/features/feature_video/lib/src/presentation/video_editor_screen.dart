@@ -63,10 +63,10 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
       final double start = _controller.startTrim.inMilliseconds / 1000.0;
       final double end = _controller.endTrim.inMilliseconds / 1000.0;
       final double duration = end - start;
-      
+
       // 2. 获取用户选定的封面所在秒数
-      final double coverTime = _controller.selectedCoverVal?.timeMs != null 
-          ? _controller.selectedCoverVal!.timeMs / 1000.0 
+      final double coverTime = _controller.selectedCoverVal?.timeMs != null
+          ? _controller.selectedCoverVal!.timeMs / 1000.0
           : start;
 
       // 3. 调用我们封装的底层 C++/FFmpeg 引擎进行硬件转码
@@ -74,26 +74,28 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
         sourcePath: widget.file.path,
         startTimeSeconds: start,
         coverTimeSeconds: coverTime,
-        maxDurationSeconds: duration.toInt() == 0 ? 1 : duration.toInt(), // 实际截取的长度 (最大15s)
+        maxDurationSeconds:
+            duration.toInt() == 0 ? 1 : duration.toInt(), // 实际截取的长度 (最大15s)
       );
 
       if (result != null) {
         setState(() {
           _exportStatus = '转码成功！正在上传至云端节点...';
         });
-        
+
         // 1. 读取视频文件字节
         final videoBytes = await result.videoFile.readAsBytes();
         final fileName = 'video_${DateTime.now().millisecondsSinceEpoch}.mp4';
-        
+
         // 2. 上传至 R2 存储
-        String videoUrl = await SupabaseService.instance.uploadMedia(fileName, videoBytes);
-        
+        String videoUrl =
+            await SupabaseService.instance.uploadMedia(fileName, videoBytes);
+
         // 如果云端 R2 没配好返回了静态兜底，为了让用户能立刻看到刚发的视频，强制替换为本地绝对路径
         if (videoUrl.contains('test_video_1.mp4')) {
-           videoUrl = 'file:///${result.videoFile.path.replaceAll('\\', '/')}';
+          videoUrl = 'file:///${result.videoFile.path.replaceAll('\\', '/')}';
         }
-        
+
         setState(() {
           _exportStatus = '上传完成，正在发布动态...';
         });
@@ -101,7 +103,7 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
         // 3. 写入 Supabase 数据库
         final user = SupabaseService.instance.currentUser;
         final authorName = user?.email?.split('@').first ?? '@匿名极客';
-        
+
         await SupabaseService.instance.publishVideo(
           videoUrl: videoUrl,
           description: '刚刚通过智选超级 APP 极限压缩上传了这条视频！🚀',
@@ -111,7 +113,7 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
         setState(() {
           _exportStatus = '发布成功！';
         });
-        
+
         // 等待1秒后返回
         await Future.delayed(const Duration(seconds: 1));
         if (mounted) {
@@ -173,7 +175,9 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
                                     }
                                   },
                                   icon: Icon(
-                                    _controller.isPlaying ? Icons.pause : Icons.play_arrow,
+                                    _controller.isPlaying
+                                        ? Icons.pause
+                                        : Icons.play_arrow,
                                     color: Colors.white,
                                     size: 32,
                                   ),
@@ -184,7 +188,8 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
                             // 核心：15秒时间轴截取器
                             Container(
                               height: 60,
-                              margin: const EdgeInsets.symmetric(horizontal: 16),
+                              margin:
+                                  const EdgeInsets.symmetric(horizontal: 16),
                               child: TrimSlider(
                                 controller: _controller,
                                 height: 60,
@@ -193,11 +198,18 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
                             ),
                             const SizedBox(height: 24),
                             // 核心：封面抽取选择器
-                            const Text('滑动选择封面 (将抽取为高清 WebP)', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                            const Text(
+                              '滑动选择封面 (将抽取为高清 WebP)',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
                             const SizedBox(height: 8),
                             Container(
                               height: 40,
-                              margin: const EdgeInsets.symmetric(horizontal: 16),
+                              margin:
+                                  const EdgeInsets.symmetric(horizontal: 16),
                               child: CoverSelection(
                                 controller: _controller,
                                 size: 40,
@@ -216,12 +228,18 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const CircularProgressIndicator(color: Colors.white),
+                            const CircularProgressIndicator(
+                              color: Colors.white,
+                            ),
                             const SizedBox(height: 24),
                             Text(
                               _exportStatus,
                               textAlign: TextAlign.center,
-                              style: const TextStyle(color: Colors.white, fontSize: 16, height: 1.5),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                height: 1.5,
+                              ),
                             ),
                           ],
                         ),
@@ -244,7 +262,14 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
             icon: const Icon(Icons.close, color: Colors.white),
             onPressed: () => Navigator.pop(context),
           ),
-          const Text('截取 15 秒', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+          const Text(
+            '截取 15 秒',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
           GestureDetector(
             onTap: _isExporting ? null : _exportVideo,
             behavior: HitTestBehavior.opaque,
@@ -254,7 +279,13 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
                 color: Colors.white, // 纯白发布按钮
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: const Text('发布', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+              child: const Text(
+                '发布',
+                style: TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
           ),
         ],

@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 class AppColors {
   // 品牌主色调
   static const Color primary = Color(0xFF0052D9);
-  
+
   // 辅助色
   static const Color success = Color(0xFF2BA471);
   static const Color warning = Color(0xFFE37318);

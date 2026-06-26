@@ -48,7 +48,7 @@ class ZodiacConstellationPainter extends CustomPainter {
       final double radius = isMajorStar ? 2.5 : 1.5;
 
       canvas.drawCircle(point, radius + 2, starGlowPaint); // 光晕
-      canvas.drawCircle(point, radius, starCorePaint);     // 亮核
+      canvas.drawCircle(point, radius, starCorePaint); // 亮核
     }
   }
 
@@ -58,20 +58,20 @@ class ZodiacConstellationPainter extends CustomPainter {
     final h = size.height;
     return [
       // 左侧小人 (Castor)
-      Offset(w * 0.2, h * 0.1),  // 0: 头部
-      Offset(w * 0.3, h * 0.3),  // 1: 脖子/肩膀
+      Offset(w * 0.2, h * 0.1), // 0: 头部
+      Offset(w * 0.3, h * 0.3), // 1: 脖子/肩膀
       Offset(w * 0.15, h * 0.4), // 2: 左手
-      Offset(w * 0.45, h * 0.35),// 3: 右手 (牵手点)
+      Offset(w * 0.45, h * 0.35), // 3: 右手 (牵手点)
       Offset(w * 0.25, h * 0.6), // 4: 腰部
-      Offset(w * 0.1, h * 0.8),  // 5: 左脚
-      Offset(w * 0.35, h * 0.85),// 6: 右脚
+      Offset(w * 0.1, h * 0.8), // 5: 左脚
+      Offset(w * 0.35, h * 0.85), // 6: 右脚
 
       // 右侧小人 (Pollux)
       Offset(w * 0.7, h * 0.15), // 7: 头部
-      Offset(w * 0.65, h * 0.35),// 8: 脖子/肩膀
-      Offset(w * 0.85, h * 0.45),// 9: 右手
+      Offset(w * 0.65, h * 0.35), // 8: 脖子/肩膀
+      Offset(w * 0.85, h * 0.45), // 9: 右手
       Offset(w * 0.6, h * 0.65), // 10: 腰部
-      Offset(w * 0.5, h * 0.9),  // 11: 左脚
+      Offset(w * 0.5, h * 0.9), // 11: 左脚
       Offset(w * 0.8, h * 0.85), // 12: 右脚
     ];
   }
@@ -84,7 +84,7 @@ class ZodiacConstellationPainter extends CustomPainter {
       // 右侧小人连线
       [7, 8], [8, 3], [8, 9], [8, 10], [10, 11], [10, 12],
       // 两人牵手连线
-      [3, 8], 
+      [3, 8],
     ];
   }
 
@@ -122,7 +122,7 @@ class ConstellationBorderPainter extends CustomPainter {
     canvas.drawArc(
       Rect.fromCircle(center: center, radius: radius),
       math.pi / 2, // 起始角度 (底部)
-      math.pi,     // 扫描角度 (画半圆到顶部)
+      math.pi, // 扫描角度 (画半圆到顶部)
       false,
       arcPaint,
     );
@@ -132,7 +132,7 @@ class ConstellationBorderPainter extends CustomPainter {
       ..color = Colors.white
       ..style = PaintingStyle.fill
       ..maskFilter = const MaskFilter.blur(BlurStyle.solid, 2); // 发光效果
-      
+
     final linePaint = Paint()
       ..color = Colors.white.withValues(alpha: 0.3)
       ..style = PaintingStyle.stroke
@@ -140,8 +140,14 @@ class ConstellationBorderPainter extends CustomPainter {
 
     // 计算几个星星的坐标 (分布在左半圆弧上)
     final List<Offset> stars = [];
-    final angles = [math.pi / 2, math.pi * 3 / 4, math.pi, math.pi * 5 / 4, math.pi * 3 / 2];
-    
+    final angles = [
+      math.pi / 2,
+      math.pi * 3 / 4,
+      math.pi,
+      math.pi * 5 / 4,
+      math.pi * 3 / 2,
+    ];
+
     for (var angle in angles) {
       final x = center.dx + radius * math.cos(angle);
       final y = center.dy + radius * math.sin(angle);
@@ -165,7 +171,8 @@ class ConstellationBorderPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
+class _ProfileScreenState extends State<ProfileScreen>
+    with SingleTickerProviderStateMixin {
   bool _showPasswordInput = false;
   bool _obscurePassword = true;
   final TextEditingController _emailController = TextEditingController();
@@ -180,9 +187,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
-    
+
     // 监听全局登录状态变化
-    _authSubscription = SupabaseService.instance.onAuthStateChange.listen((data) {
+    _authSubscription =
+        SupabaseService.instance.onAuthStateChange.listen((data) {
       if (mounted) {
         setState(() {}); // 刷新 UI
         if (_checkIsLoggedIn()) {
@@ -250,7 +258,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
             // 2. 内容层
             SafeArea(
-              child: _checkIsLoggedIn() ? _buildLoggedInProfile() : _buildLoginView(),
+              child: _checkIsLoggedIn()
+                  ? _buildLoggedInProfile()
+                  : _buildLoginView(),
             ),
           ],
         ),
@@ -267,9 +277,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           const SizedBox(height: 60),
           // 顶部：头像、日期、问候语
           _buildHeaderInfo(isLoggedIn: false),
-          
-          const Spacer(), 
-          
+
+          const Spacer(),
+
           // 底部：输入框或第三方登录区域的动态切换
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
@@ -285,7 +295,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 ),
               );
             },
-            child: _showPasswordInput ? _buildPasswordSection() : _buildEmailAndThirdPartySection(),
+            child: _showPasswordInput
+                ? _buildPasswordSection()
+                : _buildEmailAndThirdPartySection(),
           ),
           const SizedBox(height: 40),
         ],
@@ -304,11 +316,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               const SizedBox(height: 60),
               // 顶部：左星座 + 中头像 + 右ID
               _buildLoggedInHeader(),
-              
+
               const SizedBox(height: 16),
               // 名字与动态
               _buildUserInfo(),
-              
+
               const SizedBox(height: 32),
               // 底部瀑布流内容
               _buildContentFeed(),
@@ -321,7 +333,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           top: 40, // 增加 top 偏移，避开 40px 高度的 WindowCaption
           right: 16,
           child: IconButton(
-            icon: const Icon(Icons.settings_outlined, color: Colors.white, size: 28),
+            icon: const Icon(Icons.settings_outlined,
+                color: Colors.white, size: 28,),
             onPressed: _showSettingsSheet,
           ),
         ),
@@ -349,10 +362,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: Colors.black, // 未登录状态的纯黑背景
-            image: isLoggedIn ? const DecorationImage(
-              image: NetworkImage('https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'), 
-              fit: BoxFit.cover,
-            ) : null,
+            image: isLoggedIn
+                ? const DecorationImage(
+                    image: NetworkImage(
+                        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',),
+                    fit: BoxFit.cover,
+                  )
+                : null,
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.5),
@@ -361,19 +377,19 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               ),
             ],
           ),
-          child: !isLoggedIn 
-            ? const Center(
-                child: Text(
-                  'SS',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 36,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
+          child: !isLoggedIn
+              ? const Center(
+                  child: Text(
+                    'SS',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 36,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 2,
+                    ),
                   ),
-                ),
-              )
-            : null,
+                )
+              : null,
         ),
         const SizedBox(height: 24),
         // 日期
@@ -389,7 +405,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         const SizedBox(height: 8),
         // 问候语
         Text(
-          isLoggedIn ? '晚上好，${SupabaseService.instance.currentUser?.email?.split('@').first ?? ''}！' : '欢迎，请登录',
+          isLoggedIn
+              ? '晚上好，${SupabaseService.instance.currentUser?.email?.split('@').first ?? ''}！'
+              : '欢迎，请登录',
           style: const TextStyle(
             color: Colors.white,
             fontSize: 28,
@@ -405,7 +423,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   Widget _buildLoggedInHeader() {
     final user = SupabaseService.instance.currentUser;
     final metadata = user?.userMetadata ?? {};
-    final avatarUrl = metadata['avatar_url'] as String? ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80';
+    final avatarUrl = metadata['avatar_url'] as String? ??
+        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80';
     final userId9 = metadata['user_id_9'] as String? ?? '8848';
 
     return Padding(
@@ -426,12 +445,17 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Text('双子座', style: TextStyle(color: Colors.white, fontSize: 13, letterSpacing: 2, fontWeight: FontWeight.w300)),
+                  const Text('双子座',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          letterSpacing: 2,
+                          fontWeight: FontWeight.w300,),),
                 ],
               ),
             ),
           ),
-          
+
           // 居中：带星图半边框的大头像
           GestureDetector(
             onTap: _pickAndUpdateAvatar,
@@ -463,15 +487,25 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               ),
             ),
           ),
-          
+
           // 右侧：生活 ID（居中于右半边）
           Expanded(
             child: Center(
               child: Column(
                 children: [
-                  const Text('生活', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 2)),
+                  const Text('生活',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 2,),),
                   const SizedBox(height: 8),
-                  Text('ID: $userId9', style: const TextStyle(color: Colors.white, fontSize: 13, letterSpacing: 1, fontWeight: FontWeight.w300)),
+                  Text('ID: $userId9',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          letterSpacing: 1,
+                          fontWeight: FontWeight.w300,),),
                 ],
               ),
             ),
@@ -501,20 +535,23 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       final user = SupabaseService.instance.currentUser;
       if (user == null) return;
 
-      final fileName = 'avatar_${user.id}_${DateTime.now().millisecondsSinceEpoch}.webp';
+      final fileName =
+          'avatar_${user.id}_${DateTime.now().millisecondsSinceEpoch}.webp';
       final fileBytes = await compressedFile.readAsBytes();
-      
-      final avatarUrl = await SupabaseService.instance.uploadMedia(fileName, fileBytes);
+
+      final avatarUrl =
+          await SupabaseService.instance.uploadMedia(fileName, fileBytes);
 
       // 更新 Metadata
       final metadata = Map<String, dynamic>.from(user.userMetadata ?? {});
       metadata['avatar_url'] = avatarUrl;
       await SupabaseService.instance.updateUserMetadata(metadata);
-      
+
       if (mounted) setState(() {});
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('头像更新失败: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('头像更新失败: $e')));
       }
     }
   }
@@ -523,8 +560,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   Widget _buildUserInfo() {
     final user = SupabaseService.instance.currentUser;
     final metadata = user?.userMetadata ?? {};
-    final userName = metadata['display_name'] as String? ?? user?.email?.split('@').first ?? '匿名极客';
-    
+    final userName = metadata['display_name'] as String? ??
+        user?.email?.split('@').first ??
+        '匿名极客';
+
     return Column(
       children: [
         // 名字
@@ -543,7 +582,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             const SizedBox(width: 8),
             GestureDetector(
               onTap: _updateDisplayName,
-              child: Icon(Icons.history_edu, color: Colors.white.withValues(alpha: 0.8), size: 24),
+              child: Icon(Icons.history_edu,
+                  color: Colors.white.withValues(alpha: 0.8), size: 24,),
             ),
           ],
         ),
@@ -576,8 +616,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             decoration: const InputDecoration(
               hintText: '请输入新昵称',
               hintStyle: TextStyle(color: Colors.white54),
-              enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
-              focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white)),
+              enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: Colors.white24),),
+              focusedBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: Colors.white),),
             ),
           ),
           actions: [
@@ -598,13 +640,14 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       final user = SupabaseService.instance.currentUser;
       final metadata = Map<String, dynamic>.from(user?.userMetadata ?? {});
       metadata['display_name'] = result.trim();
-      
+
       try {
         await SupabaseService.instance.updateUserMetadata(metadata);
         if (mounted) setState(() {});
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('更新失败: $e')));
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('更新失败: $e')));
         }
       }
     }
@@ -623,9 +666,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       return const SizedBox(
         height: 240,
         child: Center(
-          child: Text('暂无发布动态\n点击底部 "+" 号发布第一条短视频吧', 
-            textAlign: TextAlign.center, 
-            style: TextStyle(color: Colors.white, height: 1.5, fontWeight: FontWeight.w300),
+          child: Text(
+            '暂无发布动态\n点击底部 "+" 号发布第一条短视频吧',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                color: Colors.white, height: 1.5, fontWeight: FontWeight.w300,),
           ),
         ),
       );
@@ -636,7 +681,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       child: ListView.builder(
         controller: _feedScrollController,
         scrollDirection: Axis.horizontal,
-        itemCount: _myVideos.length, 
+        itemCount: _myVideos.length,
         itemBuilder: (context, index) {
           final video = _myVideos[index];
           // 如果没有专门的封面图，我们就用视频链接假装一下（在真实业务中需要展示封面）
@@ -652,7 +697,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 Container(
                   color: Colors.black,
                   child: const Center(
-                    child: Icon(Icons.video_library_outlined, color: Colors.white, size: 48),
+                    child: Icon(Icons.video_library_outlined,
+                        color: Colors.white, size: 48,),
                   ),
                 ),
                 // 底部信息遮罩
@@ -666,7 +712,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
-                        colors: [Colors.transparent, Colors.black.withValues(alpha: 0.8)],
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.8),
+                        ],
                       ),
                     ),
                   ),
@@ -677,7 +726,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   left: 8,
                   right: 8,
                   child: Text(
-                    video['description'] ?? '', 
+                    video['description'] ?? '',
                     style: const TextStyle(color: Colors.white, fontSize: 12),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -710,28 +759,35 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 color: Colors.transparent, // 彻底移除黑色背景
                 // border: Border(left: BorderSide(color: Colors.white.withValues(alpha: 0.1))), // 移除左侧细线，更纯粹
               ),
-              padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 24, bottom: 40),
+              padding: EdgeInsets.only(
+                  top: MediaQuery.of(context).padding.top + 24, bottom: 40,),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                    child: Text('设置', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                    child: Text('设置',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,),),
                   ),
                   const Divider(color: Colors.white10, height: 1),
                   const SizedBox(height: 16),
-                  
+
                   // 背景主题切换功能
                   _buildThemeSelector(),
-                  
+
                   const Divider(color: Colors.white10, height: 32),
                   _buildSettingsItem('账号安全', Icons.security),
                   _buildSettingsItem('更改邮箱', Icons.email_outlined),
                   const Spacer(),
                   const Divider(color: Colors.white10, height: 32),
-                  _buildSettingsItem('退出账号', Icons.logout, color: Colors.redAccent),
+                  _buildSettingsItem('退出账号', Icons.logout,
+                      color: Colors.redAccent,),
                   const SizedBox(height: 16),
-                  _buildSettingsItem('注销账号', Icons.delete_forever, color: Colors.white),
+                  _buildSettingsItem('注销账号', Icons.delete_forever,
+                      color: Colors.white,),
                 ],
               ),
             ),
@@ -743,7 +799,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           position: Tween<Offset>(
             begin: const Offset(1, 0), // 从右向左滑入
             end: Offset.zero,
-          ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+          ).animate(
+              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),),
           child: child,
         );
       },
@@ -759,32 +816,42 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           children: [
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-              child: Text('背景主题', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w300)),
+              child: Text('背景主题',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w300,),),
             ),
             _buildThemeOption('极简纯黑', BackgroundType.pureBlack, currentType),
-            _buildThemeOption('动态流光', BackgroundType.dynamicAurora, currentType),
+            _buildThemeOption(
+                '动态流光', BackgroundType.dynamicAurora, currentType,),
           ],
         );
       },
     );
   }
 
-
-  Widget _buildThemeOption(String title, BackgroundType type, BackgroundType currentType) {
+  Widget _buildThemeOption(
+      String title, BackgroundType type, BackgroundType currentType,) {
     final isSelected = currentType == type;
     return ListTile(
       leading: Icon(
         isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
         color: Colors.white,
       ),
-      title: Text(title, style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: isSelected ? FontWeight.bold : FontWeight.w300)),
+      title: Text(title,
+          style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.w300,),),
       onTap: () {
         BackgroundManager.instance.setBackground(type);
       },
     );
   }
 
-  Widget _buildSettingsItem(String title, IconData icon, {Color color = Colors.white}) {
+  Widget _buildSettingsItem(String title, IconData icon,
+      {Color color = Colors.white,}) {
     return ListTile(
       leading: Icon(icon, color: color),
       title: Text(title, style: TextStyle(color: color, fontSize: 16)),
@@ -837,7 +904,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   shape: BoxShape.circle,
                 ),
                 child: IconButton(
-                  icon: const Icon(Icons.arrow_forward, color: Colors.black, size: 20),
+                  icon: const Icon(Icons.arrow_forward,
+                      color: Colors.black, size: 20,),
                   onPressed: () {
                     if (_emailController.text.isNotEmpty) {
                       setState(() {
@@ -851,20 +919,23 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           ),
         ),
         const SizedBox(height: 32),
-        
+
         // 分割线
         Row(
           children: [
-            Expanded(child: Divider(color: Colors.white.withValues(alpha: 0.1))),
+            Expanded(
+                child: Divider(color: Colors.white.withValues(alpha: 0.1)),),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Text('或使用以下方式', style: TextStyle(color: Colors.white38, fontSize: 12)),
+              child: Text('或使用以下方式',
+                  style: TextStyle(color: Colors.white38, fontSize: 12),),
             ),
-            Expanded(child: Divider(color: Colors.white.withValues(alpha: 0.1))),
+            Expanded(
+                child: Divider(color: Colors.white.withValues(alpha: 0.1)),),
           ],
         ),
         const SizedBox(height: 24),
-        
+
         // 第三方登录按钮（小型化处理，只显示图标和简短名字）
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -899,7 +970,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   _showPasswordInput = false; // 返回修改邮箱
                 });
               },
-              child: const Icon(Icons.edit_outlined, color: Colors.white54, size: 18),
+              child: const Icon(Icons.edit_outlined,
+                  color: Colors.white54, size: 18,),
             ),
           ],
         ),
@@ -932,7 +1004,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               // 小眼睛图标
               IconButton(
                 icon: Icon(
-                  _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                  _obscurePassword
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
                   color: Colors.white54,
                   size: 20,
                 ),
@@ -943,23 +1017,28 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 },
               ),
               // 登录按钮
-              _isLoggingIn 
-                ? const Padding(
-                    padding: EdgeInsets.all(12.0),
-                    child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
-                  )
-                : Container(
-                    width: 44,
-                    height: 44,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
+              _isLoggingIn
+                  ? const Padding(
+                      padding: EdgeInsets.all(12.0),
+                      child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2,),),
+                    )
+                  : Container(
+                      width: 44,
+                      height: 44,
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      child: IconButton(
+                        icon: const Icon(Icons.arrow_forward,
+                            color: Colors.black, size: 20,),
+                        onPressed: _performLoginOrRegister,
+                      ),
                     ),
-                    child: IconButton(
-                      icon: const Icon(Icons.arrow_forward, color: Colors.black, size: 20),
-                      onPressed: _performLoginOrRegister,
-                    ),
-                  ),
             ],
           ),
         ),
@@ -972,7 +1051,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     final password = _passwordController.text.trim();
     if (email.isEmpty || password.isEmpty) return;
 
-    setState(() { _isLoggingIn = true; });
+    setState(() {
+      _isLoggingIn = true;
+    });
 
     try {
       // 尝试登录
@@ -996,7 +1077,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       }
     } finally {
       if (mounted) {
-        setState(() { _isLoggingIn = false; });
+        setState(() {
+          _isLoggingIn = false;
+        });
       }
     }
   }

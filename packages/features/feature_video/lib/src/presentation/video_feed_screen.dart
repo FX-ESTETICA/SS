@@ -13,7 +13,11 @@ class VideoModel {
   final String authorName;
   final String description;
 
-  VideoModel({required this.url, required this.authorName, required this.description});
+  VideoModel({
+    required this.url,
+    required this.authorName,
+    required this.description,
+  });
 
   // 从云端 JSON 数据解析的工厂方法
   factory VideoModel.fromJson(Map<String, dynamic> json) {
@@ -47,7 +51,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     super.initState();
     // 1. 初始化 C++ 引擎池
     VideoEnginePool.instance.initialize();
-    
+
     _pageController = PageController();
     _fetchVideosFromCloud();
   }
@@ -61,7 +65,8 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
           _isLoading = false;
         });
         // 数据到达后，将焦点锁定到索引 0，开始底层预加载
-        VideoEnginePool.instance.focusIndex(0, _videos.map((e) => e.url).toList());
+        VideoEnginePool.instance
+            .focusIndex(0, _videos.map((e) => e.url).toList());
       }
     } catch (e) {
       if (mounted) {
@@ -69,19 +74,22 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
           _errorMessage = '云端连接失败，已切换至离线缓存模式';
           _videos.addAll([
             VideoModel(
-              url: 'https://flutter.github.io/assets-for-api-docs/assets/videos/butterfly.mp4',
+              url:
+                  'https://flutter.github.io/assets-for-api-docs/assets/videos/butterfly.mp4',
               authorName: '@智选官方 (离线)',
               description: '极致丝滑！智选超级 APP 首次点火测试 🔥 #Flutter #Tech',
             ),
             VideoModel(
-              url: 'https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4',
+              url:
+                  'https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4',
               authorName: '@自然探索 (离线)',
               description: '大自然的美丽瞬间 🌸',
             ),
           ]);
           _isLoading = false;
         });
-        VideoEnginePool.instance.focusIndex(0, _videos.map((e) => e.url).toList());
+        VideoEnginePool.instance
+            .focusIndex(0, _videos.map((e) => e.url).toList());
       }
     }
   }
@@ -92,7 +100,8 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     // 如果 Tab 切换导致非激活，强制冻结所有 C++ 解码
     if (oldWidget.isTabActive != widget.isTabActive) {
       if (widget.isTabActive) {
-        VideoEnginePool.instance.focusIndex(_currentIndex, _videos.map((e) => e.url).toList());
+        VideoEnginePool.instance
+            .focusIndex(_currentIndex, _videos.map((e) => e.url).toList());
       } else {
         VideoEnginePool.instance.freezeAll();
       }
@@ -137,8 +146,12 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
                 _videos.clear();
                 _fetchVideosFromCloud();
               },
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-              child: const Text('点击重试 (刷新)', style: TextStyle(color: Colors.white)),
+              style:
+                  ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+              child: const Text(
+                '点击重试 (刷新)',
+                style: TextStyle(color: Colors.white),
+              ),
             ),
           ],
         ),
@@ -164,12 +177,14 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
               });
               // 将滑动焦点事件抛给底层 C++ 引擎池进行物理指针偏移
               if (widget.isTabActive) {
-                VideoEnginePool.instance.focusIndex(index, _videos.map((e) => e.url).toList());
+                VideoEnginePool.instance
+                    .focusIndex(index, _videos.map((e) => e.url).toList());
               }
             },
             itemBuilder: (context, index) {
               // 极限预加载：只渲染当前和前后 1 个
-              final bool isRendered = (index >= _currentIndex - 1 && index <= _currentIndex + 1);
+              final bool isRendered =
+                  (index >= _currentIndex - 1 && index <= _currentIndex + 1);
               if (!isRendered) {
                 return const SizedBox();
               }
@@ -180,18 +195,31 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
                     // 【终极降维打击】：必须将 Listener 放在 PageView 内部 (itemBuilder 里)！
                     // 因为 Flutter 事件是冒泡的，子节点比父节点先收到事件。
                     // 这样我们的拦截器才能比 PageView 底层的 Scrollable 更早注册 Resolver，真正“私吞”滚轮事件！
-                    GestureBinding.instance.pointerSignalResolver.register(pointerSignal, (PointerSignalEvent event) {
+                    GestureBinding.instance.pointerSignalResolver
+                        .register(pointerSignal, (PointerSignalEvent event) {
                       final e = event as PointerScrollEvent;
                       final now = DateTime.now();
-                      
+
                       // 400ms 极致防抖，完美匹配翻页动画时间，拒绝任何连滚和抽搐
-                      if (now.difference(_lastScrollTime).inMilliseconds < 400) return;
+                      if (now.difference(_lastScrollTime).inMilliseconds <
+                          400) {
+                        return;
+                      }
                       _lastScrollTime = now;
 
-                      if (e.scrollDelta.dy > 0 && _currentIndex < _videos.length - 1) {
-                        _pageController.animateToPage(_currentIndex + 1, duration: const Duration(milliseconds: 400), curve: Curves.easeOutCubic);
+                      if (e.scrollDelta.dy > 0 &&
+                          _currentIndex < _videos.length - 1) {
+                        _pageController.animateToPage(
+                          _currentIndex + 1,
+                          duration: const Duration(milliseconds: 400),
+                          curve: Curves.easeOutCubic,
+                        );
                       } else if (e.scrollDelta.dy < 0 && _currentIndex > 0) {
-                        _pageController.animateToPage(_currentIndex - 1, duration: const Duration(milliseconds: 400), curve: Curves.easeOutCubic);
+                        _pageController.animateToPage(
+                          _currentIndex - 1,
+                          duration: const Duration(milliseconds: 400),
+                          curve: Curves.easeOutCubic,
+                        );
                       }
                     });
                   }
@@ -291,7 +319,8 @@ class _VideoPlayerItem extends StatelessWidget {
               children: [
                 Text(
                   video.authorName,
-                  style: AppTypography.h1.copyWith(color: Colors.white, fontSize: 18),
+                  style: AppTypography.h1
+                      .copyWith(color: Colors.white, fontSize: 18),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -331,7 +360,12 @@ class _VideoPlayerItem extends StatelessWidget {
                 // 发布/添加视频按钮，作为最顶端的UI设计重构，放在最末尾
                 GestureDetector(
                   onTap: () {
-                    Navigator.push(context, MaterialPageRoute(builder: (context) => const VideoUploadScreen()));
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const VideoUploadScreen(),
+                      ),
+                    );
                   },
                   child: Container(
                     width: 48,
@@ -366,7 +400,7 @@ class _VideoPlayerItem extends StatelessWidget {
                 // 绝对同步读取底层状态，拒绝 StreamBuilder 嵌套导致的 state 丢失
                 final position = player.state.position;
                 final duration = player.state.duration;
-                
+
                 double progress = 0;
                 if (duration.inMilliseconds > 0) {
                   progress = position.inMilliseconds / duration.inMilliseconds;
@@ -393,7 +427,8 @@ class _VideoPlayerItem extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           label,
-          style: AppTypography.caption.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
+          style: AppTypography.caption
+              .copyWith(color: Colors.white, fontWeight: FontWeight.bold),
         ),
       ],
     );

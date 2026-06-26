@@ -19,7 +19,8 @@ class MessageModel {
     required this.isMe,
   });
 
-  factory MessageModel.fromJson(Map<String, dynamic> json, String currentUserId) {
+  factory MessageModel.fromJson(
+      Map<String, dynamic> json, String currentUserId,) {
     return MessageModel(
       id: json['id'] as String,
       content: json['content'] as String,
@@ -41,12 +42,12 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  
+
   final List<MessageModel> _messages = [];
   bool _isLoading = true;
   String? _errorMessage;
   StreamSubscription? _messageSubscription;
-  
+
   // 模拟当前用户的 ID（在真实的 Supabase Auth 中，这是登录用户的 UUID）
   final String _currentUserId = 'user_123';
 
@@ -69,11 +70,13 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _fetchHistoryMessages() async {
     try {
       final data = await SupabaseService.instance.fetchHistoryMessages();
-      
+
       if (mounted) {
         setState(() {
           _messages.clear();
-          _messages.addAll(data.map((e) => MessageModel.fromJson(e, _currentUserId)).toList());
+          _messages.addAll(data
+              .map((e) => MessageModel.fromJson(e, _currentUserId))
+              .toList(),);
           _isLoading = false;
         });
         _scrollToBottom();
@@ -90,11 +93,14 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// 2. 订阅 WebSocket (Realtime) 频道，实现秒发秒回
   void _subscribeToNewMessages() {
-    _messageSubscription = SupabaseService.instance.listenToMessages().listen((data) {
+    _messageSubscription =
+        SupabaseService.instance.listenToMessages().listen((data) {
       if (mounted) {
         setState(() {
           _messages.clear();
-          _messages.addAll(data.map((e) => MessageModel.fromJson(e, _currentUserId)).toList());
+          _messages.addAll(data
+              .map((e) => MessageModel.fromJson(e, _currentUserId))
+              .toList(),);
         });
         _scrollToBottom();
       }
@@ -108,7 +114,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     // 先清空输入框，提供极速响应的 UI 体验
     _textController.clear();
-    
+
     // 我们不需要手动 add 到 _messages 列表里！
     // 因为只要我们写入数据库，上面的 _subscribeToNewMessages 就会瞬间通过 WebSocket 把新消息推回给我们！
     try {
@@ -149,7 +155,11 @@ class _ChatScreenState extends State<ChatScreen> {
         toolbarHeight: kToolbarHeight + 32,
         title: const Padding(
           padding: EdgeInsets.only(top: 32.0),
-          child: Text('架构师 (在线)', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+          child: Text('架构师 (在线)',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,),),
         ),
         actions: [
           Padding(
@@ -180,7 +190,9 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     if (_errorMessage != null) {
-      return Center(child: Text(_errorMessage!, style: const TextStyle(color: AppColors.error)));
+      return Center(
+          child: Text(_errorMessage!,
+              style: const TextStyle(color: AppColors.error),),);
     }
 
     return ListView.builder(
@@ -196,11 +208,12 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Widget _buildMessageBubble(MessageModel msg) {
     final isMe = msg.isMe;
-    
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 24), // 增加气泡之间的呼吸感
       child: Row(
-        mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment:
+            isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isMe) ...[
@@ -212,31 +225,38 @@ class _ChatScreenState extends State<ChatScreen> {
                 shape: BoxShape.circle,
                 border: Border.all(color: Colors.white, width: 1),
               ),
-              child: const Icon(Icons.smart_toy_outlined, color: Colors.black, size: 20), // 黑图标
+              child: const Icon(Icons.smart_toy_outlined,
+                  color: Colors.black, size: 20,), // 黑图标
             ),
             const SizedBox(width: 12),
           ],
-          
           Flexible(
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
               decoration: BoxDecoration(
                 // 极致黑白：我的消息纯白，对方消息纯黑框
                 color: isMe ? Colors.white : Colors.black,
-                border: isMe ? null : Border.all(color: Colors.white.withValues(alpha: 0.2), width: 1), // 对方消息加极其微弱的白边框界定边界
+                border: isMe
+                    ? null
+                    : Border.all(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        width: 1,), // 对方消息加极其微弱的白边框界定边界
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(20),
                   topRight: const Radius.circular(20),
                   bottomLeft: Radius.circular(isMe ? 20 : 4),
                   bottomRight: Radius.circular(isMe ? 4 : 20),
                 ),
-                boxShadow: isMe ? [
-                  BoxShadow(
-                    color: Colors.white.withValues(alpha: 0.1), // 白色气泡微微发光
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ] : null,
+                boxShadow: isMe
+                    ? [
+                        BoxShadow(
+                          color:
+                              Colors.white.withValues(alpha: 0.1), // 白色气泡微微发光
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ]
+                    : null,
               ),
               child: Text(
                 msg.content,
@@ -248,7 +268,6 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
           ),
-          
           if (isMe) ...[
             const SizedBox(width: 12),
             Container(
@@ -259,7 +278,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 shape: BoxShape.circle,
                 border: Border.all(color: Colors.white, width: 1), // 我的头像线框
               ),
-              child: const Icon(Icons.person_outline, color: Colors.white, size: 20), // 白图标
+              child: const Icon(Icons.person_outline,
+                  color: Colors.white, size: 20,), // 白图标
             ),
           ],
         ],
@@ -272,7 +292,10 @@ class _ChatScreenState extends State<ChatScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.transparent, // 必须透明以露出底部流光，不能是纯黑
-        border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 0.5)), // 极细白线分割
+        border: Border(
+            top: BorderSide(
+                color: Colors.white.withValues(alpha: 0.1),
+                width: 0.5,),), // 极细白线分割
       ),
       child: SafeArea(
         child: Row(
@@ -285,7 +308,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 decoration: BoxDecoration(
                   color: Colors.transparent, // 输入框透明
                   borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.3), width: 1), // 线框输入框
+                  border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.3),
+                      width: 1,), // 线框输入框
                 ),
                 child: TextField(
                   controller: _textController,
@@ -296,10 +321,13 @@ class _ChatScreenState extends State<ChatScreen> {
                   style: const TextStyle(color: Colors.white), // 输入文字纯白
                   decoration: const InputDecoration(
                     isDense: true,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                     border: InputBorder.none,
                     hintText: '发送消息...',
-                    hintStyle: TextStyle(color: Colors.white, fontWeight: FontWeight.w300), // 占位符暗白
+                    hintStyle: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w300,), // 占位符暗白
                   ),
                 ),
               ),
@@ -313,7 +341,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   color: Colors.white, // 发送按钮纯白实心
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.send, size: 18, color: Colors.black), // 黑图标
+                child: const Icon(Icons.send,
+                    size: 18, color: Colors.black,), // 黑图标
               ),
             ),
           ],

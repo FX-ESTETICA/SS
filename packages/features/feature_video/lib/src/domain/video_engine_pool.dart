@@ -9,18 +9,18 @@ class VideoEnginePool {
 
   // 严格限制为 3 个实例：上一个、当前、下一个
   static const int poolSize = 3;
-  
+
   final List<Player> _players = [];
   final List<VideoController> _controllers = [];
-  
+
   // 记录当前每个底层播放器加载的 URL，防止重复 open 引发 IO 阻塞
   final List<String?> _loadedUrls = List.filled(poolSize, null);
-  
+
   bool _isInitialized = false;
 
   void initialize() {
     if (_isInitialized) return;
-    
+
     for (int i = 0; i < poolSize; i++) {
       // 预先分配内存缓冲池，开启硬件加速
       final player = Player(
@@ -29,8 +29,8 @@ class VideoEnginePool {
         ),
       );
       // 硬件级循环，不经过 Dart
-      player.setPlaylistMode(PlaylistMode.single); 
-      
+      player.setPlaylistMode(PlaylistMode.single);
+
       _players.add(player);
       _controllers.add(VideoController(player));
     }

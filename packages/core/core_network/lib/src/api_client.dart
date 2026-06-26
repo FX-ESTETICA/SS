@@ -31,7 +31,8 @@ class ApiClient {
 
   /// 所有的 GET 请求必须经过这里
   /// 返回值使用 Either，强制上层处理错误，彻底告别 try-catch 地狱和莫名其妙的崩溃
-  Future<Either<NetworkException, dynamic>> get(String path, {Map<String, dynamic>? queryParameters}) async {
+  Future<Either<NetworkException, dynamic>> get(String path,
+      {Map<String, dynamic>? queryParameters,}) async {
     try {
       final response = await _dio.get(path, queryParameters: queryParameters);
       return Right(response.data);
@@ -43,9 +44,11 @@ class ApiClient {
   }
 
   /// POST 请求
-  Future<Either<NetworkException, dynamic>> post(String path, {dynamic data, Map<String, dynamic>? queryParameters}) async {
+  Future<Either<NetworkException, dynamic>> post(String path,
+      {dynamic data, Map<String, dynamic>? queryParameters,}) async {
     try {
-      final response = await _dio.post(path, data: data, queryParameters: queryParameters);
+      final response =
+          await _dio.post(path, data: data, queryParameters: queryParameters);
       return Right(response.data);
     } on DioException catch (e) {
       return Left(NetworkException.fromDioError(e));
@@ -55,9 +58,11 @@ class ApiClient {
   }
 
   /// PUT 请求
-  Future<Either<NetworkException, dynamic>> put(String path, {dynamic data, Map<String, dynamic>? queryParameters}) async {
+  Future<Either<NetworkException, dynamic>> put(String path,
+      {dynamic data, Map<String, dynamic>? queryParameters,}) async {
     try {
-      final response = await _dio.put(path, data: data, queryParameters: queryParameters);
+      final response =
+          await _dio.put(path, data: data, queryParameters: queryParameters);
       return Right(response.data);
     } on DioException catch (e) {
       return Left(NetworkException.fromDioError(e));
@@ -67,9 +72,11 @@ class ApiClient {
   }
 
   /// DELETE 请求
-  Future<Either<NetworkException, dynamic>> delete(String path, {Map<String, dynamic>? queryParameters}) async {
+  Future<Either<NetworkException, dynamic>> delete(String path,
+      {Map<String, dynamic>? queryParameters,}) async {
     try {
-      final response = await _dio.delete(path, queryParameters: queryParameters);
+      final response =
+          await _dio.delete(path, queryParameters: queryParameters);
       return Right(response.data);
     } on DioException catch (e) {
       return Left(NetworkException.fromDioError(e));

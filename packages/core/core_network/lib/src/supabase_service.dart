@@ -37,23 +37,27 @@ class SupabaseService {
   Stream<AuthState> get onAuthStateChange => client.auth.onAuthStateChange;
 
   /// 邮箱密码注册
-  Future<AuthResponse> signUpWithEmailPassword(String email, String password) async {
+  Future<AuthResponse> signUpWithEmailPassword(
+      String email, String password,) async {
     // 注册生成 9 位随机 ID，保存到 metadata
     final randomId = (100000000 + math.Random().nextInt(900000000)).toString();
     return await client.auth.signUp(
-      email: email, 
+      email: email,
       password: password,
       data: {
         'display_name': email.split('@').first,
         'user_id_9': randomId,
-        'avatar_url': 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
+        'avatar_url':
+            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
       },
     );
   }
 
   /// 邮箱密码登录
-  Future<AuthResponse> signInWithEmailPassword(String email, String password) async {
-    return await client.auth.signInWithPassword(email: email, password: password);
+  Future<AuthResponse> signInWithEmailPassword(
+      String email, String password,) async {
+    return await client.auth
+        .signInWithPassword(email: email, password: password);
   }
 
   /// 退出登录
@@ -70,14 +74,15 @@ class SupabaseService {
   final List<Map<String, dynamic>> _localVideos = [];
 
   /// 2. 视频流获取：从云端数据库中查询视频列表
-  Future<List<Map<String, dynamic>>> fetchVideos({int limit = 10, int offset = 0}) async {
+  Future<List<Map<String, dynamic>>> fetchVideos(
+      {int limit = 10, int offset = 0,}) async {
     try {
       final data = await client
           .from('videos')
           .select()
           .order('created_at', ascending: false) // 按最新时间排序
           .range(offset, offset + limit - 1);
-      
+
       // 合并本地临时发布的视频
       final result = List<Map<String, dynamic>>.from(data);
       if (offset == 0) {
@@ -142,7 +147,8 @@ class SupabaseService {
   }
 
   /// 3. 商城瀑布流获取：拉取高并发商品数据
-  Future<List<Map<String, dynamic>>> fetchProducts({int limit = 10, int offset = 0}) async {
+  Future<List<Map<String, dynamic>>> fetchProducts(
+      {int limit = 10, int offset = 0,}) async {
     try {
       final data = await client
           .from('products')
@@ -156,7 +162,8 @@ class SupabaseService {
   }
 
   /// 4. IM 消息发送：插入一条新消息
-  Future<void> sendMessage({required String content, required String senderId}) async {
+  Future<void> sendMessage(
+      {required String content, required String senderId,}) async {
     try {
       await client.from('messages').insert({
         'content': content,
@@ -168,7 +175,8 @@ class SupabaseService {
   }
 
   /// 5. IM 历史消息获取
-  Future<List<Map<String, dynamic>>> fetchHistoryMessages({int limit = 50}) async {
+  Future<List<Map<String, dynamic>>> fetchHistoryMessages(
+      {int limit = 50,}) async {
     try {
       final data = await client
           .from('messages')
@@ -184,6 +192,8 @@ class SupabaseService {
   /// 6. IM 实时监听：WebSocket 订阅新消息
   SupabaseStreamBuilder listenToMessages() {
     // 监听 messages 表的所有 INSERT 事件
-    return client.from('messages').stream(primaryKey: ['id']).order('created_at', ascending: true);
+    return client
+        .from('messages')
+        .stream(primaryKey: ['id']).order('created_at', ascending: true);
   }
 }

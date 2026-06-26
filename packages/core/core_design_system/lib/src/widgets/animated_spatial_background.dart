@@ -10,12 +10,13 @@ class AnimatedSpatialBackground extends StatefulWidget {
   const AnimatedSpatialBackground({super.key, required this.child});
 
   @override
-  State<AnimatedSpatialBackground> createState() => _AnimatedSpatialBackgroundState();
+  State<AnimatedSpatialBackground> createState() =>
+      _AnimatedSpatialBackgroundState();
 }
 
 class _AnimatedSpatialBackgroundState extends State<AnimatedSpatialBackground> {
   ui.FragmentProgram? _program;
-  
+
   @override
   void initState() {
     super.initState();
@@ -25,7 +26,8 @@ class _AnimatedSpatialBackgroundState extends State<AnimatedSpatialBackground> {
 
   Future<void> _loadShader() async {
     try {
-      final program = await ui.FragmentProgram.fromAsset('packages/core_design_system/shaders/aurora_flow.frag');
+      final program = await ui.FragmentProgram.fromAsset(
+          'packages/core_design_system/shaders/aurora_flow.frag',);
       if (mounted) {
         setState(() {
           _program = program;
@@ -51,16 +53,17 @@ class _AnimatedSpatialBackgroundState extends State<AnimatedSpatialBackground> {
           children: [
             if (bgType == BackgroundType.dynamicAurora && _program != null)
               SizedBox.expand(
-                child: RepaintBoundary( // 硬件图层隔离，防止其他组件的频繁重绘波及 Shader
+                child: RepaintBoundary(
+                  // 硬件图层隔离，防止其他组件的频繁重绘波及 Shader
                   child: CustomPaint(
                     // 将 Notifier 传入 Painter，实现真正的旁路渲染 (Bypass Rendering)
-                    painter: _AuroraShaderPainter(_program!, BackgroundManager.instance.globalTimeNotifier),
+                    painter: _AuroraShaderPainter(_program!,
+                        BackgroundManager.instance.globalTimeNotifier,),
                   ),
                 ),
               )
             else if (bgType == BackgroundType.pureBlack || _program == null)
               Container(color: Colors.black),
-              
             widget.child,
           ],
         );
@@ -74,7 +77,8 @@ class _AuroraShaderPainter extends CustomPainter {
   final ValueNotifier<double> timeNotifier;
 
   // 核心修复：将 timeNotifier 传给 super(repaint)，Flutter 会自动在数值改变时仅重绘此画布
-  _AuroraShaderPainter(this.program, this.timeNotifier) : super(repaint: timeNotifier);
+  _AuroraShaderPainter(this.program, this.timeNotifier)
+      : super(repaint: timeNotifier);
 
   @override
   void paint(Canvas canvas, Size size) {

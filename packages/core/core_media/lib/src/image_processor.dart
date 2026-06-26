@@ -18,12 +18,12 @@ class ImageProcessor {
       sourcePath: sourcePath,
       uiSettings: [
         AndroidUiSettings(
-            toolbarTitle: '调整图片',
-            toolbarColor: Colors.black, // 严格遵守暗黑/沉浸底色红线
-            toolbarWidgetColor: Colors.white, // 纯白前景色红线
-            initAspectRatio: CropAspectRatioPreset.original,
-            lockAspectRatio: false,
-            hideBottomControls: false,
+          toolbarTitle: '调整图片',
+          toolbarColor: Colors.black, // 严格遵守暗黑/沉浸底色红线
+          toolbarWidgetColor: Colors.white, // 纯白前景色红线
+          initAspectRatio: CropAspectRatioPreset.original,
+          lockAspectRatio: false,
+          hideBottomControls: false,
         ),
         IOSUiSettings(
           title: '调整图片',
@@ -37,10 +37,12 @@ class ImageProcessor {
 
     // 2. 获取临时目录，准备 WebP 输出
     final tempDir = Directory.systemTemp;
-    final targetPath = '${tempDir.path}/${DateTime.now().millisecondsSinceEpoch}_compressed.webp';
+    final targetPath =
+        '${tempDir.path}/${DateTime.now().millisecondsSinceEpoch}_compressed.webp';
 
     // 3. 调用底层的 C++ / libjpeg-turbo / WebP 编码器进行极限压缩
-    final XFile? compressedXFile = await FlutterImageCompress.compressAndGetFile(
+    final XFile? compressedXFile =
+        await FlutterImageCompress.compressAndGetFile(
       croppedFile.path,
       targetPath,
       minWidth: maxLongSide,
