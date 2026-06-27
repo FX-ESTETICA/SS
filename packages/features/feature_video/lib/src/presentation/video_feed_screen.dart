@@ -44,7 +44,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   int _currentIndex = 0;
-  DateTime _lastScrollTime = DateTime.now(); // 滚轮极致防抖时间戳
+  bool _isPaging = false; // 翻页状态锁
 
   @override
   void initState() {
@@ -97,12 +97,15 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   @override
   void didUpdateWidget(covariant VideoFeedScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 如果 Tab 切换导致非激活，强制冻结所有 C++ 解码
+    // @AI_CONTEXT: [生命周期解耦] 监听外层 Tab 切换状态，控制视频引擎的冻结与恢复
+    // 如果 Tab 切换导致非激活，强制暂停视频并冻结所有 C++ 解码
     if (oldWidget.isTabActive != widget.isTabActive) {
       if (widget.isTabActive) {
+        // Tab 激活：恢复焦点视频播放并重新准备缓存池
         VideoEnginePool.instance
             .focusIndex(_currentIndex, _videos.map((e) => e.url).toList());
       } else {
+        // Tab 离开：静默冻结所有视频，实现物理隔离，解决跨 Tab 依然有声音的问题
         VideoEnginePool.instance.freezeAll();
       }
     }
@@ -170,6 +173,8 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
           child: PageView.builder(
             controller: _pageController,
             scrollDirection: Axis.vertical, // 上下滑动
+            physics:
+                const NeverScrollableScrollPhysics(), // 【绝对拦截】：完全禁用系统默认滚动，一切交由代码控制
             itemCount: _videos.length,
             onPageChanged: (index) {
               setState(() {
@@ -192,33 +197,39 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
               return Listener(
                 onPointerSignal: (pointerSignal) {
                   if (pointerSignal is PointerScrollEvent) {
-                    // 【终极降维打击】：必须将 Listener 放在 PageView 内部 (itemBuilder 里)！
-                    // 因为 Flutter 事件是冒泡的，子节点比父节点先收到事件。
-                    // 这样我们的拦截器才能比 PageView 底层的 Scrollable 更早注册 Resolver，真正“私吞”滚轮事件！
+                    // 【终极降维打击】：必须将 Listener 放在 PageView 内部！
+                    // 强制接管滚轮事件，让它永远不被原生 Scrollable 捕获！
                     GestureBinding.instance.pointerSignalResolver
                         .register(pointerSignal, (PointerSignalEvent event) {
                       final e = event as PointerScrollEvent;
-                      final now = DateTime.now();
 
-                      // 400ms 极致防抖，完美匹配翻页动画时间，拒绝任何连滚和抽搐
-                      if (now.difference(_lastScrollTime).inMilliseconds <
-                          400) {
-                        return;
-                      }
-                      _lastScrollTime = now;
+                      // 【唯一的锁】：只要正在翻页动画中，任何滚轮事件全部静默吃掉
+                      if (_isPaging) return;
 
+                      // 只要收到了明确的上下滚动指令，立刻触发翻页并上锁
                       if (e.scrollDelta.dy > 0 &&
                           _currentIndex < _videos.length - 1) {
-                        _pageController.animateToPage(
-                          _currentIndex + 1,
-                          duration: const Duration(milliseconds: 400),
-                          curve: Curves.easeOutCubic,
-                        );
+                        _isPaging = true;
+                        _pageController
+                            .animateToPage(
+                              _currentIndex + 1,
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeOutCubic,
+                            )
+                            .then((_) => _isPaging = false);
                       } else if (e.scrollDelta.dy < 0 && _currentIndex > 0) {
-                        _pageController.animateToPage(
-                          _currentIndex - 1,
-                          duration: const Duration(milliseconds: 400),
-                          curve: Curves.easeOutCubic,
+                        _isPaging = true;
+                        _pageController
+                            .animateToPage(
+                              _currentIndex - 1,
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeOutCubic,
+                            )
+                            .then((_) => _isPaging = false);
+                      } else if (e.scrollDelta.dy > 0 &&
+                          _currentIndex == _videos.length - 1) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('已经到底啦，没有更多视频了')),
                         );
                       }
                     });

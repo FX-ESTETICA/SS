@@ -525,13 +525,19 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
     // 动态生成一个与分类相关的图片 URL，利用字符串的 hashCode 保证同一个分类每次加载图片一致
     final imageId = (title.hashCode % 500) + 10;
 
+    // 针对“附近服务”使用特定的高端实景图（替换原有的黑白图）
+    // 用户如需使用图1，可直接将此处的 imageUrl 替换为图1的真实网络 CDN 地址
+    final imageUrl = title == '附近服务'
+        ? 'https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=1000&auto=format&fit=crop'
+        : 'https://picsum.photos/id/$imageId/1000/400';
+
     return GestureDetector(
       onTap: () {
         if (product != null) {
           // 点击展位，跳转到该分类的广告聚合页或商品页，模拟广告点击效果
           final adProduct = ProductModel(
             title: '$title · 官方精选推荐',
-            imageUrl: 'https://picsum.photos/id/$imageId/1000/400',
+            imageUrl: imageUrl,
             price: product.price,
             salesCount: 9999,
             shopName: '智选精选展位',
@@ -559,7 +565,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
           fit: StackFit.expand,
           children: [
             CachedNetworkImage(
-              imageUrl: 'https://picsum.photos/id/$imageId/1000/400',
+              imageUrl: imageUrl,
               fit: BoxFit.cover,
               memCacheWidth: 1000,
               placeholder: (context, url) =>

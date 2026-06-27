@@ -11,9 +11,24 @@ import 'router/app_router.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'dart:io';
+
+// 强制覆盖全局 Http 证书校验（仅用于解决桌面端证书链不全的问题）
+class MyHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context)
+      ..badCertificateCallback =
+          (X509Certificate cert, String host, int port) => true;
+  }
+}
+
 void main() async {
   // 确保 Flutter 引擎完全绑定，这是初始化云端服务的前提
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 解决 Windows 桌面端由于缺少根证书导致的 HttpClient 访问 HTTPS 图片失败的问题
+  HttpOverrides.global = MyHttpOverrides();
 
   // 扩大底层 C++ 纹理缓存池 (ImageCache) 到 256MB 和 1000 张图片。
   // 彻底消灭因缓存太小导致的图片频繁 GC (垃圾回收) 和滑动时的主线程重新解码卡顿
@@ -90,7 +105,8 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
-  int _currentIndex = 0;
+  // 默认启动页修改为视频页（索引 2）
+  int _currentIndex = 2;
 
   @override
   Widget build(BuildContext context) {
