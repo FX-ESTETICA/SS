@@ -48,7 +48,7 @@ class VideoProcessor {
           '-c:a', 'aac',
           '-b:a', '128k',
           '-movflags', 'faststart',
-          targetVideoPath
+          targetVideoPath,
         ];
         
         final result = await Process.run('ffmpeg', args);
@@ -71,7 +71,7 @@ class VideoProcessor {
           '-i', sourcePath,
           '-vframes', '1',
           '-c:v', 'libwebp',
-          targetCoverPath
+          targetCoverPath,
         ];
         await Process.run('ffmpeg', coverArgs);
         

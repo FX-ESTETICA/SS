@@ -2,6 +2,47 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../theme/background_manager.dart';
 
+class _BackgroundShaderRegistry {
+  static const Map<BackgroundType, String> shaderAssets = {
+    BackgroundType.dynamicAurora:
+        'packages/core_design_system/shaders/aurora_flow.frag',
+    BackgroundType.rainbowGradient:
+        'packages/core_design_system/shaders/rainbow_flow.frag',
+    BackgroundType.crimsonNebula:
+        'packages/core_design_system/shaders/crimson_nebula.frag',
+    BackgroundType.oceanGlacier:
+        'packages/core_design_system/shaders/ocean_glacier.frag',
+    BackgroundType.emeraldMist:
+        'packages/core_design_system/shaders/emerald_mist.frag',
+  };
+
+  static final Map<BackgroundType, ui.FragmentProgram> _programs = {};
+  static Future<void>? _loadingFuture;
+
+  static Future<void> ensureLoaded() {
+    if (_programs.length == shaderAssets.length) {
+      return Future.value();
+    }
+
+    _loadingFuture ??= Future.wait<MapEntry<BackgroundType, ui.FragmentProgram>>(
+      shaderAssets.entries.map((entry) async {
+        final program = await ui.FragmentProgram.fromAsset(entry.value);
+        return MapEntry(entry.key, program);
+      }),
+    ).then((loadedPrograms) {
+      _programs
+        ..clear()
+        ..addEntries(loadedPrograms);
+    });
+
+    return _loadingFuture!;
+  }
+
+  static ui.FragmentProgram? programFor(BackgroundType type) {
+    return _programs[type];
+  }
+}
+
 /// 极简美学：深空流光背景组件
 /// 使用 Fragment Shader 进行 GPU 硬件加速，通过 ValueNotifier 驱动局部重绘，彻底解放 CPU
 class AnimatedSpatialBackground extends StatefulWidget {
@@ -15,8 +56,6 @@ class AnimatedSpatialBackground extends StatefulWidget {
 }
 
 class _AnimatedSpatialBackgroundState extends State<AnimatedSpatialBackground> {
-  ui.FragmentProgram? _program;
-
   @override
   void initState() {
     super.initState();
@@ -26,12 +65,10 @@ class _AnimatedSpatialBackgroundState extends State<AnimatedSpatialBackground> {
 
   Future<void> _loadShader() async {
     try {
-      final program = await ui.FragmentProgram.fromAsset(
-        'packages/core_design_system/shaders/aurora_flow.frag',
-      );
+      await _BackgroundShaderRegistry.ensureLoaded();
       if (mounted) {
         setState(() {
-          _program = program;
+          // 仅触发一次重建，实际 Program 由全局注册表复用。
         });
       }
     } catch (e) {
@@ -52,21 +89,11 @@ class _AnimatedSpatialBackgroundState extends State<AnimatedSpatialBackground> {
       builder: (context, bgType, _) {
         return Stack(
           children: [
-            if (bgType == BackgroundType.dynamicAurora && _program != null)
-              SizedBox.expand(
-                child: RepaintBoundary(
-                  // 硬件图层隔离，防止其他组件的频繁重绘波及 Shader
-                  child: CustomPaint(
-                    // 将 Notifier 传入 Painter，实现真正的旁路渲染 (Bypass Rendering)
-                    painter: _AuroraShaderPainter(
-                      _program!,
-                      BackgroundManager.instance.globalTimeNotifier,
-                    ),
-                  ),
-                ),
-              )
-            else if (bgType == BackgroundType.pureBlack || _program == null)
-              Container(color: Colors.black),
+            Positioned.fill(
+              child: BackgroundThemePreview(
+                backgroundType: bgType,
+              ),
+            ),
             widget.child,
           ],
         );
@@ -75,12 +102,64 @@ class _AnimatedSpatialBackgroundState extends State<AnimatedSpatialBackground> {
   }
 }
 
-class _AuroraShaderPainter extends CustomPainter {
+class BackgroundThemePreview extends StatefulWidget {
+  final BackgroundType backgroundType;
+
+  const BackgroundThemePreview({
+    super.key,
+    required this.backgroundType,
+  });
+
+  @override
+  State<BackgroundThemePreview> createState() => _BackgroundThemePreviewState();
+}
+
+class _BackgroundThemePreviewState extends State<BackgroundThemePreview> {
+  @override
+  void initState() {
+    super.initState();
+    _loadShader();
+  }
+
+  Future<void> _loadShader() async {
+    try {
+      await _BackgroundShaderRegistry.ensureLoaded();
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (e) {
+      debugPrint('Shader preview load error: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentProgram = _BackgroundShaderRegistry.programFor(
+      widget.backgroundType,
+    );
+
+    if (widget.backgroundType == BackgroundType.pureBlack ||
+        currentProgram == null) {
+      return Container(color: Colors.black);
+    }
+
+    return RepaintBoundary(
+      child: CustomPaint(
+        painter: _ShaderBackgroundPainter(
+          currentProgram,
+          BackgroundManager.instance.globalTimeNotifier,
+        ),
+      ),
+    );
+  }
+}
+
+class _ShaderBackgroundPainter extends CustomPainter {
   final ui.FragmentProgram program;
   final ValueNotifier<double> timeNotifier;
 
   // 核心修复：将 timeNotifier 传给 super(repaint)，Flutter 会自动在数值改变时仅重绘此画布
-  _AuroraShaderPainter(this.program, this.timeNotifier)
+  _ShaderBackgroundPainter(this.program, this.timeNotifier)
       : super(repaint: timeNotifier);
 
   @override
@@ -96,7 +175,7 @@ class _AuroraShaderPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _AuroraShaderPainter oldDelegate) {
+  bool shouldRepaint(covariant _ShaderBackgroundPainter oldDelegate) {
     // 因为使用了 repaint 驱动，这里可以直接返回 false
     return false;
   }

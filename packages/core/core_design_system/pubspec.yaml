@@ -13,6 +13,10 @@ dependencies:
 flutter:
   shaders:
     - shaders/aurora_flow.frag
+    - shaders/rainbow_flow.frag
+    - shaders/crimson_nebula.frag
+    - shaders/ocean_glacier.frag
+    - shaders/emerald_mist.frag
 
 
 dev_dependencies:

@@ -21,6 +21,9 @@ dependencies:
   # 视频处理相关 UI (依赖必须在当前包也声明，因为直接使用了它们的 Widget)
   image_picker: ^1.1.2
   video_editor: ^3.0.0
+  cached_network_image: ^3.4.1
+  dio: ^5.9.2
+  path_provider: ^2.1.5
   
   # 顶级 C++ 内核视频播放器 (降维打击抖音底层)
   media_kit: ^1.1.10

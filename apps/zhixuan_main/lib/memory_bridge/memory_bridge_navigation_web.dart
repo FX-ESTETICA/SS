@@ -1,11 +1,11 @@
-import 'dart:html' as html;
+import 'package:web/web.dart' as web;
 
 String buildMemoryBridgeUrl() {
-  final origin = html.window.location.origin ?? '';
+  final origin = web.window.location.origin;
   return '$origin/memory/';
 }
 
 bool openMemoryBridgeInSameTab(String url) {
-  html.window.location.assign(url);
+  web.window.location.assign(url);
   return true;
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:core_design_system/core_design_system.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
+import 'current_user_avatar.dart';
 
 class BookingRecordsScreen extends StatefulWidget {
   const BookingRecordsScreen({super.key});
@@ -104,19 +105,10 @@ class _BookingRecordsScreenState extends State<BookingRecordsScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
-              image: const DecorationImage(
-                image: CachedNetworkImageProvider(
-                  'https://pub-43cf2479c66540898a3717f1a1ba26cc.r2.dev/shop_item_1.jpg',
-                ),
-                fit: BoxFit.cover,
-              ),
-            ),
+          const CurrentUserAvatar(
+            size: 40,
+            fallbackIcon: Icons.person_outline,
+            fallbackIconSize: 20,
           ),
           const SizedBox(width: 12),
           const Text(

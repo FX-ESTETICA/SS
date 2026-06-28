@@ -31,7 +31,7 @@ class _MemoryBridgeEntryScreenState extends State<MemoryBridgeEntryScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isWebRedirecting = kIsWeb;
+    const isWebRedirecting = kIsWeb;
 
     return Scaffold(
       backgroundColor: Colors.black,

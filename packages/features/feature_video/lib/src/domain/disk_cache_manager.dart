@@ -19,7 +19,7 @@ class DiskVideoCacheManager {
   final LinkedHashMap<String, String> _lruCache = LinkedHashMap<String, String>();
 
   // 商业级参数设定
-  static const int MAX_CACHE_FILES = 100; // 最多缓存 100 个视频 (约 150MB-200MB)
+  static const int maxCacheFiles = 100; // 最多缓存 100 个视频 (约 150MB-200MB)
 
   bool _isInitialized = false;
 
@@ -47,7 +47,7 @@ class DiskVideoCacheManager {
         _evictIfNeeded();
       }
       _isInitialized = true;
-      debugPrint('【DiskCache】商业级视频缓存引擎初始化完成，当前挂载文件数: ${_lruCache.length}/$MAX_CACHE_FILES');
+      debugPrint('【DiskCache】商业级视频缓存引擎初始化完成，当前挂载文件数: ${_lruCache.length}/$maxCacheFiles');
     } catch (e) {
       debugPrint('【DiskCache】初始化失败: $e');
     }
@@ -127,7 +127,7 @@ class DiskVideoCacheManager {
   
   /// LRU 淘汰算法 (残酷抹杀机制)
   void _evictIfNeeded() {
-    while (_lruCache.length > MAX_CACHE_FILES) {
+    while (_lruCache.length > maxCacheFiles) {
       // 取出队列头部最旧的文件 (最久未被观看的)
       final oldestFilePath = _lruCache.keys.first;
       _lruCache.remove(oldestFilePath);

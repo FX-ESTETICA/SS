@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'current_user_avatar.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:core_design_system/core_design_system.dart';
 import 'package:core_media/core_media.dart';
@@ -177,9 +178,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     with SingleTickerProviderStateMixin {
   bool _showPasswordInput = false;
   bool _obscurePassword = true;
+  bool _isSettingsOpen = false;
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final ScrollController _feedScrollController = ScrollController();
+  late final PageController _themePageController;
   Timer? _autoScrollTimer;
   StreamSubscription? _authSubscription;
   bool _isLoggingIn = false;
@@ -189,6 +192,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   @override
   void initState() {
     super.initState();
+    _themePageController = PageController(
+      viewportFraction: 0.54,
+      initialPage: _themeIndexOf(BackgroundManager.instance.currentBackground.value),
+    );
 
     // 监听全局登录状态变化
     // @AI_CONTEXT: [2026-06-26] 使用 Riverpod 监听登录状态
@@ -239,6 +246,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   void dispose() {
     _autoScrollTimer?.cancel();
     _feedScrollController.dispose();
+    _themePageController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _authSubscription?.cancel();
@@ -249,8 +257,32 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   bool _checkIsLoggedIn() =>
       ref.read(supabaseProvider).auth.currentSession != null;
 
+  int _themeIndexOf(BackgroundType type) {
+    final index = BackgroundManager.availableThemes.indexWhere(
+      (preset) => preset.type == type,
+    );
+    return index == -1 ? 0 : index;
+  }
+
+  void _syncThemeCarousel(BackgroundType currentType) {
+    if (!_themePageController.hasClients) return;
+    final targetPage = _themeIndexOf(currentType);
+    final currentPage = _themePageController.page?.round();
+    if (currentPage == targetPage) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_themePageController.hasClients) return;
+      _themePageController.animateToPage(
+        targetPage,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isLoggedIn = _checkIsLoggedIn();
     return Scaffold(
       backgroundColor: Colors.transparent, // 必须透明以露出全局流光
       body: AnimatedSpatialBackground(
@@ -262,10 +294,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
             // 2. 内容层
             SafeArea(
-              child: _checkIsLoggedIn()
-                  ? _buildLoggedInProfile()
+              child: isLoggedIn
+                  ? (_isSettingsOpen
+                        ? const SizedBox.shrink()
+                        : _buildLoggedInProfile())
                   : _buildLoginView(),
             ),
+            if (isLoggedIn && _isSettingsOpen) _buildSettingsDrawerOverlay(),
           ],
         ),
       ),
@@ -342,7 +377,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               color: Colors.white,
               size: 28,
             ),
-            onPressed: _showSettingsSheet,
+            onPressed: _openSettingsDrawer,
           ),
         ),
       ],
@@ -431,8 +466,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   Widget _buildLoggedInHeader() {
     final user = SupabaseService.currentUser;
     final metadata = user?.userMetadata ?? {};
-    final avatarUrl = metadata['avatar_url'] as String? ??
-        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80';
+    final avatarUrl = resolveCurrentUserAvatarUrl();
     final userId9 = metadata['user_id_9'] as String? ?? '8848';
 
     return Padding(
@@ -555,12 +589,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       final fileName =
           'avatar_${user.id}_${DateTime.now().millisecondsSinceEpoch}.webp';
       final fileBytes = await compressedFile.readAsBytes();
+      final session = SupabaseService.client.auth.currentSession;
+      if (session == null) return;
 
-      final avatarUrl = await SupabaseService.uploadMedia(fileName, fileBytes);
+      final avatarUpload = await SupabaseService.uploadMedia(
+        fileName: fileName,
+        fileBytes: fileBytes,
+        mediaKind: 'cover',
+        accessToken: session.accessToken,
+        contentType: 'image/webp',
+      );
 
       // 更新 Metadata
       final metadata = Map<String, dynamic>.from(user.userMetadata ?? {});
-      metadata['avatar_url'] = avatarUrl;
+      metadata['avatar_url'] = avatarUpload.publicUrl;
       await SupabaseService.updateUserMetadata(metadata);
 
       if (mounted) setState(() {});
@@ -767,83 +809,110 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     );
   }
 
-  /// 弹出右侧抽屉式的设置面板
-  void _showSettingsSheet() {
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: '关闭设置',
-      barrierColor: Colors.transparent, // 移除左侧黑色遮罩，让其完全透明
-      transitionDuration: const Duration(milliseconds: 300),
-      pageBuilder: (context, animation, secondaryAnimation) {
-        return Align(
-          alignment: Alignment.centerRight, // 靠右对齐
-          child: Material(
-            color: Colors.transparent, // 材质背景透明
-            child: Container(
-              width: 280, // 抽屉宽度
-              decoration: const BoxDecoration(
-                color: Colors.transparent, // 彻底移除黑色背景
-                // border: Border(left: BorderSide(color: Colors.white.withValues(alpha: 0.1))), // 移除左侧细线，更纯粹
-              ),
-              padding: EdgeInsets.only(
-                top: MediaQuery.of(context).padding.top + 24,
-                bottom: 40,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                    child: Text(
-                      '设置',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 24,
-                        fontWeight: FontWeight.w500,
+  void _openSettingsDrawer() {
+    setState(() {
+      _isSettingsOpen = true;
+    });
+  }
+
+  void _closeSettingsDrawer() {
+    setState(() {
+      _isSettingsOpen = false;
+    });
+  }
+
+  Widget _buildSettingsDrawerOverlay() {
+    return SafeArea(
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _closeSettingsDrawer,
+              child: const SizedBox.expand(),
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 1, end: 0),
+              duration: const Duration(milliseconds: 260),
+              curve: Curves.easeOutCubic,
+              builder: (context, value, child) {
+                return Transform.translate(
+                  offset: Offset(48 * value, 0),
+                  child: Opacity(
+                    opacity: 1 - value,
+                    child: child,
+                  ),
+                );
+              },
+              child: Padding(
+                padding: const EdgeInsets.only(
+                  top: 28,
+                  right: 20,
+                  bottom: 28,
+                ),
+                child: SizedBox(
+                  width: 300,
+                  height: 560,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 12,
+                              ),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: CurrentUserAvatar(
+                                  size: 52,
+                                  onTap: _pickAndUpdateAvatar,
+                                  fallbackIconSize: 24,
+                                ),
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: _closeSettingsDrawer,
+                            icon: const Icon(
+                              Icons.close,
+                              color: Colors.white,
+                              size: 22,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
+                      const SizedBox(height: 12),
+                      _buildThemeSelector(),
+                      const SizedBox(height: 28),
+                      _buildSettingsItem('账号安全', Icons.security),
+                      _buildSettingsItem('更改邮箱', Icons.email_outlined),
+                      _buildSettingsItem('项目记忆桥接', Icons.memory_outlined),
+                      const Spacer(),
+                      _buildSettingsItem(
+                        '退出账号',
+                        Icons.logout,
+                        color: Colors.redAccent,
+                      ),
+                      const SizedBox(height: 16),
+                      _buildSettingsItem(
+                        '注销账号',
+                        Icons.delete_forever,
+                        color: Colors.white,
+                      ),
+                    ],
                   ),
-                  const Divider(color: Colors.white10, height: 1),
-                  const SizedBox(height: 16),
-
-                  // 背景主题切换功能
-                  _buildThemeSelector(),
-
-                  const Divider(color: Colors.white10, height: 32),
-                  _buildSettingsItem('账号安全', Icons.security),
-                  _buildSettingsItem('更改邮箱', Icons.email_outlined),
-                  _buildSettingsItem('项目记忆桥接', Icons.memory_outlined),
-                  const Spacer(),
-                  const Divider(color: Colors.white10, height: 32),
-                  _buildSettingsItem(
-                    '退出账号',
-                    Icons.logout,
-                    color: Colors.redAccent,
-                  ),
-                  const SizedBox(height: 16),
-                  _buildSettingsItem(
-                    '注销账号',
-                    Icons.delete_forever,
-                    color: Colors.white,
-                  ),
-                ],
+                ),
               ),
             ),
           ),
-        );
-      },
-      transitionBuilder: (context, animation, secondaryAnimation, child) {
-        return SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(1, 0), // 从右向左滑入
-            end: Offset.zero,
-          ).animate(
-            CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
-          ),
-          child: child,
-        );
-      },
+        ],
+      ),
     );
   }
 
@@ -851,6 +920,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     return ValueListenableBuilder<BackgroundType>(
       valueListenable: BackgroundManager.instance.currentBackground,
       builder: (context, currentType, _) {
+        _syncThemeCarousel(currentType);
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -865,11 +936,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 ),
               ),
             ),
-            _buildThemeOption('极简纯黑', BackgroundType.pureBlack, currentType),
-            _buildThemeOption(
-              '动态流光',
-              BackgroundType.dynamicAurora,
-              currentType,
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 126,
+              child: PageView.builder(
+                controller: _themePageController,
+                padEnds: true,
+                itemCount: BackgroundManager.availableThemes.length,
+                onPageChanged: (index) {
+                  final preset = BackgroundManager.availableThemes[index];
+                  BackgroundManager.instance.setBackground(preset.type);
+                },
+                itemBuilder: (context, index) {
+                  final preset = BackgroundManager.availableThemes[index];
+                  return _buildThemePreviewCard(
+                    index: index,
+                    preset: preset,
+                    isSelected: preset.type == currentType,
+                  );
+                },
+              ),
             ),
           ],
         );
@@ -877,28 +963,66 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     );
   }
 
-  Widget _buildThemeOption(
-    String title,
-    BackgroundType type,
-    BackgroundType currentType,
-  ) {
-    final isSelected = currentType == type;
-    return ListTile(
-      leading: Icon(
-        isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-        color: Colors.white,
+  Widget _buildThemePreviewCard({
+    required int index,
+    required BackgroundThemePreset preset,
+    required bool isSelected,
+  }) {
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 220),
+      padding: EdgeInsets.symmetric(
+        horizontal: 8,
+        vertical: isSelected ? 0 : 10,
       ),
-      title: Text(
-        title,
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 16,
-          fontWeight: isSelected ? FontWeight.w500 : FontWeight.w300,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          _themePageController.animateToPage(
+            index,
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeOutCubic,
+          );
+          BackgroundManager.instance.setBackground(preset.type);
+        },
+        child: AnimatedScale(
+          duration: const Duration(milliseconds: 220),
+          scale: isSelected ? 1.0 : 0.88,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(5),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    BackgroundThemePreview(backgroundType: preset.type),
+                    Positioned(
+                      left: 14,
+                      right: 14,
+                      bottom: 14,
+                      child: Text(
+                        preset.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: isSelected ? 17 : 15,
+                          fontWeight:
+                              isSelected ? FontWeight.w600 : FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
       ),
-      onTap: () {
-        BackgroundManager.instance.setBackground(type);
-      },
     );
   }
 
@@ -911,7 +1035,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       leading: Icon(icon, color: color),
       title: Text(title, style: TextStyle(color: color, fontSize: 16)),
       onTap: () async {
-        Navigator.pop(context);
+        _closeSettingsDrawer();
         if (title == '项目记忆桥接') {
           if (!mounted) return;
           context.push('/memory-bridge');

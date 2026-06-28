@@ -121,12 +121,16 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
               VideoModel(
                 url:
                     'https://flutter.github.io/assets-for-api-docs/assets/videos/butterfly.mp4',
+                coverUrl:
+                    'https://flutter.github.io/assets-for-api-docs/assets/videos/butterfly.jpg',
                 authorName: '@智选官方 (离线)',
                 description: '极致丝滑！智选超级 APP 首次点火测试 🔥 #Flutter #Tech',
               ),
               VideoModel(
                 url:
                     'https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4',
+                coverUrl:
+                    'https://flutter.github.io/assets-for-api-docs/assets/videos/bee.jpg',
                 authorName: '@自然探索 (离线)',
                 description: '大自然的美丽瞬间 🌸',
               ),
@@ -206,6 +210,62 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
             ),
           ],
         ),
+      );
+    }
+
+    if (_videos.isEmpty) {
+      return Stack(
+        children: [
+          Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text(
+                  '暂无视频内容',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  '数据库还是空的，先上传第一条视频吧',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+                const SizedBox(height: 28),
+                OutlinedButton(
+                  onPressed: _openUploadEntry,
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.white, width: 1.5),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 14,
+                    ),
+                  ),
+                  child: const Text(
+                    '上传第一条视频',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            right: 16,
+            bottom: 118,
+            child: _buildUploadActionButton(),
+          ),
+        ],
       );
     }
 
@@ -315,6 +375,43 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
             ),
           ),
       ],
+    );
+  }
+
+  void _openUploadEntry() {
+    if (SupabaseService.currentSession == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先登录后再发布视频')),
+      );
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const VideoUploadScreen(),
+      ),
+    );
+  }
+
+  Widget _buildUploadActionButton() {
+    return GestureDetector(
+      onTap: _openUploadEntry,
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: const Icon(Icons.add, color: Colors.black, size: 32),
+      ),
     );
   }
 }
@@ -540,9 +637,11 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
                             data: SliderThemeData(
                               trackHeight: 2,
                               thumbShape: const RoundSliderThumbShape(
-                                  enabledThumbRadius: 6),
+                                enabledThumbRadius: 6,
+                              ),
                               overlayShape: const RoundSliderOverlayShape(
-                                  overlayRadius: 12),
+                                overlayRadius: 12,
+                              ),
                               activeTrackColor: Colors.white,
                               inactiveTrackColor:
                                   Colors.white.withValues(alpha: 0.2),

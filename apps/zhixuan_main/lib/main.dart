@@ -7,7 +7,6 @@ import 'package:feature_im/feature_im.dart';
 import 'package:feature_profile/feature_profile.dart';
 import 'package:media_kit/media_kit.dart'; // 引入顶级播放器引擎
 import 'package:window_manager/window_manager.dart';
-import 'package:feature_video/src/domain/disk_cache_manager.dart'; // 引入本地缓存
 import 'router/app_router.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -225,12 +224,23 @@ class _MainScreenState extends State<MainScreen> {
                     : Icons.calendar_today_outlined),
                 label: ''),
             BottomNavigationBarItem(
-                icon: Icon(
-                    _currentIndex == 4 ? Icons.person : Icons.person_outline),
+                icon: _buildProfileTabIcon(isSelected: _currentIndex == 4),
                 label: ''),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildProfileTabIcon({required bool isSelected}) {
+    if (SupabaseService.currentSession == null) {
+      return Icon(isSelected ? Icons.person : Icons.person_outline);
+    }
+
+    return CurrentUserAvatar(
+      size: isSelected ? 24 : 22,
+      fallbackIcon: isSelected ? Icons.person : Icons.person_outline,
+      fallbackIconSize: isSelected ? 15 : 14,
     );
   }
 
