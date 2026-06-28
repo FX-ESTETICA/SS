@@ -50,8 +50,7 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _errorMessage;
   StreamSubscription? _messageSubscription;
 
-  // 模拟当前用户的 ID（在真实的 Supabase Auth 中，这是登录用户的 UUID）
-  final String _currentUserId = 'user_123';
+  String get _currentUserId => SupabaseService.currentUser?.id ?? '';
 
   @override
   void initState() {
@@ -70,6 +69,16 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// 1. 从云端拉取历史消息
   Future<void> _fetchHistoryMessages() async {
+    if (_currentUserId.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = '请先登录后再使用聊天功能';
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+
     try {
       final data = await SupabaseService.fetchHistoryMessages();
 
@@ -95,6 +104,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// 2. 订阅 WebSocket (Realtime) 频道，实现秒发秒回
   void _subscribeToNewMessages() {
+    if (_currentUserId.isEmpty) return;
     _messageSubscription = SupabaseService.listenToMessages().listen((data) {
       if (mounted) {
         setState(() {
@@ -112,6 +122,12 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _sendMessage() async {
     final text = _textController.text.trim();
     if (text.isEmpty) return;
+    if (_currentUserId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先登录后再发送消息')),
+      );
+      return;
+    }
 
     // 先清空输入框，提供极速响应的 UI 体验
     _textController.clear();

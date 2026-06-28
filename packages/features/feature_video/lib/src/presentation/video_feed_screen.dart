@@ -7,24 +7,44 @@ import 'package:media_kit_video/media_kit_video.dart';
 import '../domain/video_engine_pool.dart'; // 引入底层引擎池
 import 'video_upload_screen.dart'; // 引入上传页面
 
-/// 模拟从后端拉取的短视频数据模型
+import 'package:cached_network_image/cached_network_image.dart';
+
+/// 商业级短视频数据模型 (结合了封面、计数器等冗余字段)
 class VideoModel {
   final String url;
+  final String coverUrl; // 独立的封面链接
   final String authorName;
   final String description;
+  final int viewCount;
+  final int likeCount;
+  final int commentCount;
+  final int shareCount;
 
   VideoModel({
     required this.url,
+    required this.coverUrl,
     required this.authorName,
     required this.description,
+    this.viewCount = 0,
+    this.likeCount = 0,
+    this.commentCount = 0,
+    this.shareCount = 0,
   });
 
   // 从云端 JSON 数据解析的工厂方法
   factory VideoModel.fromJson(Map<String, dynamic> json) {
     return VideoModel(
       url: json['video_url'] ?? '',
-      authorName: json['author_name'] ?? '@未知作者',
+      coverUrl: json['cover_url'] ?? '',
+      // 注意：目前由于 UI 层还是写死的作者名逻辑，如果关联了 auth.users，
+      // 顶级架构会通过 JOIN 把 users.raw_user_meta_data->>'full_name' 带出来。
+      // 这里为了兼容过渡期，先从表里直接拿或者默认
+      authorName: json['author_name'] ?? json['authorName'] ?? '@匿名用户',
       description: json['description'] ?? '',
+      viewCount: json['view_count'] ?? 0,
+      likeCount: json['like_count'] ?? 0,
+      commentCount: json['comment_count'] ?? 0,
+      shareCount: json['share_count'] ?? 0,
     );
   }
 }
@@ -45,6 +65,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   String? _errorMessage;
   int _currentIndex = 0;
   bool _isPaging = false; // 翻页状态锁
+  bool _isFetching = false; // 网络请求锁
 
   @override
   void initState() {
@@ -56,41 +77,68 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     _fetchVideos();
   }
 
-  Future<void> _fetchVideos() async {
+  Future<void> _fetchVideos({bool isLoadMore = false}) async {
+    if (_isFetching) return;
+    _isFetching = true;
+
     try {
-      final data = await SupabaseService.fetchVideos();
+      final offset = isLoadMore ? _videos.length : 0;
+      final data = await SupabaseService.fetchVideos(offset: offset, limit: 10);
+
       if (mounted) {
         setState(() {
-          _videos.addAll(data.map((e) => VideoModel.fromJson(e)).toList());
+          if (data.isNotEmpty) {
+            // 将新数据转换为模型，并进行打乱（模拟推荐系统的千人千面）
+            final newVideos = data.map((e) => VideoModel.fromJson(e)).toList();
+            newVideos.shuffle(); // 纯前端打乱模拟个性化分发
+            _videos.addAll(newVideos);
+          } else if (isLoadMore && _videos.isNotEmpty) {
+            // 【终极无底洞策略】：如果云端真的没有更多数据了，我们从已有列表中随机抽取打乱并追加
+            // 永远不让用户看到“到底了”，保持心流不被打断
+            final loopVideos = List<VideoModel>.from(_videos);
+            loopVideos.shuffle();
+            _videos.addAll(loopVideos.take(10));
+          }
           _isLoading = false;
         });
-        // 数据到达后，将焦点锁定到索引 0，开始底层预加载
-        VideoEnginePool.instance
-            .focusIndex(0, _videos.map((e) => e.url).toList());
+
+        // 数据到达后，将焦点锁定到当前索引，开始底层预加载
+        if (!isLoadMore) {
+          VideoEnginePool.instance
+              .focusIndex(0, _videos.map((e) => e.url).toList());
+        } else {
+          // 如果是追加数据，通知引擎池更新 URL 列表，但不改变当前播放焦点
+          VideoEnginePool.instance
+              .focusIndex(_currentIndex, _videos.map((e) => e.url).toList());
+        }
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = '云端连接失败，已切换至离线缓存模式';
-          _videos.addAll([
-            VideoModel(
-              url:
-                  'https://flutter.github.io/assets-for-api-docs/assets/videos/butterfly.mp4',
-              authorName: '@智选官方 (离线)',
-              description: '极致丝滑！智选超级 APP 首次点火测试 🔥 #Flutter #Tech',
-            ),
-            VideoModel(
-              url:
-                  'https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4',
-              authorName: '@自然探索 (离线)',
-              description: '大自然的美丽瞬间 🌸',
-            ),
-          ]);
-          _isLoading = false;
+          if (!isLoadMore) {
+            _errorMessage = '云端连接失败，已切换至离线缓存模式';
+            _videos.addAll([
+              VideoModel(
+                url:
+                    'https://flutter.github.io/assets-for-api-docs/assets/videos/butterfly.mp4',
+                authorName: '@智选官方 (离线)',
+                description: '极致丝滑！智选超级 APP 首次点火测试 🔥 #Flutter #Tech',
+              ),
+              VideoModel(
+                url:
+                    'https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4',
+                authorName: '@自然探索 (离线)',
+                description: '大自然的美丽瞬间 🌸',
+              ),
+            ]);
+            _isLoading = false;
+            VideoEnginePool.instance
+                .focusIndex(0, _videos.map((e) => e.url).toList());
+          }
         });
-        VideoEnginePool.instance
-            .focusIndex(0, _videos.map((e) => e.url).toList());
       }
+    } finally {
+      _isFetching = false;
     }
   }
 
@@ -180,6 +228,12 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
               setState(() {
                 _currentIndex = index;
               });
+
+              // 【无感预加载】：当用户滑动到倒数第 3 个视频时，静默拉取下一页
+              if (_currentIndex >= _videos.length - 3) {
+                _fetchVideos(isLoadMore: true);
+              }
+
               // 将滑动焦点事件抛给底层 C++ 引擎池进行物理指针偏移
               if (widget.isTabActive) {
                 VideoEnginePool.instance
@@ -228,9 +282,8 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
                             .then((_) => _isPaging = false);
                       } else if (e.scrollDelta.dy > 0 &&
                           _currentIndex == _videos.length - 1) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('已经到底啦，没有更多视频了')),
-                        );
+                        // 如果用户手速极快，撞到了最后一帧（预加载没赶上），主动触发拉取并翻页尝试
+                        _fetchVideos(isLoadMore: true);
                       }
                     });
                   }
@@ -267,7 +320,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
 }
 
 /// 极简无状态视频播放组件 (彻底接管自底层池)
-class _VideoPlayerItem extends StatelessWidget {
+class _VideoPlayerItem extends StatefulWidget {
   final VideoModel video;
   final int index;
   final bool isActive;
@@ -279,41 +332,72 @@ class _VideoPlayerItem extends StatelessWidget {
   });
 
   @override
+  State<_VideoPlayerItem> createState() => _VideoPlayerItemState();
+}
+
+class _VideoPlayerItemState extends State<_VideoPlayerItem> {
+  bool _isDragging = false; // 是否正在手动拖拽进度条
+
+  @override
   Widget build(BuildContext context) {
     // 物理级映射：根据真实 index 获取底层被分配的 3 个常驻 C++ 引擎之一
-    final controller = VideoEnginePool.instance.getController(index);
-    final player = VideoEnginePool.instance.getPlayer(index);
+    final controller = VideoEnginePool.instance.getController(widget.index);
+    final player = VideoEnginePool.instance.getPlayer(widget.index);
 
     return GestureDetector(
-      onTap: () => VideoEnginePool.instance.togglePlay(index), // 点击屏幕暂停/播放
+      onTap: () =>
+          VideoEnginePool.instance.togglePlay(widget.index), // 点击屏幕暂停/播放
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // 1. 视频底层渲染 (Zero-copy 直出)
+          // 1. 底层封面图 (Poster Layer) - 终极防残影机制
+          // 当视频底层在异步加载或被系统回收时，使用模糊的首帧图兜底，绝对不能露黑屏或上一条视频的残影
+          SizedBox.expand(
+            child: widget.video.coverUrl.isNotEmpty
+                ? CachedNetworkImage(
+                    imageUrl: widget.video.coverUrl,
+                    fit: BoxFit.cover,
+                    // 骨架屏占位：在封面还没加载出来时，用纯黑打底
+                    placeholder: (context, url) => Container(color: Colors.black),
+                    errorWidget: (context, url, error) => Container(color: Colors.black),
+                  )
+                : Container(color: Colors.black), // 如果没有封面，使用物理级黑场遮罩
+          ),
+
+          // 2. 视频底层渲染 (Zero-copy 直出)
           SizedBox.expand(
             child: FittedBox(
               fit: BoxFit.cover, // 裁切适应全屏（抖音模式）
               child: SizedBox(
                 width: MediaQuery.of(context).size.width,
                 height: MediaQuery.of(context).size.height,
-                child: Video(
-                  controller: controller,
-                  controls: NoVideoControls, // 禁用默认的控制器，使用我们自己写的沉浸式 UI
+                // 【核心优化】：使用 AnimatedOpacity 配合 playing 状态
+                // 只有当这一帧真正开始播放时，才让 C++ 的纹理层透出来。
+                // 这样彻底掩盖了底层播放器在 open 瞬间带来的前几毫秒“画面错乱/撕裂”问题。
+                child: StreamBuilder<bool>(
+                  stream: player.stream.playing,
+                  builder: (context, snapshot) {
+                    final isPlaying = snapshot.data ?? false;
+                    return AnimatedOpacity(
+                      opacity: isPlaying ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 150),
+                      child: Video(
+                        controller: controller,
+                        controls: NoVideoControls,
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
           ),
 
           // 2. 状态蒙层 (暂停图标)
-          // 【极致体验重构】：彻底抛弃基于 `buffering` 的粗暴 Loading 圈。
-          // 因为底层 C++ 引擎池已经提前 1 个位置 open 预载了视频，
-          // 滑动过来时已经有画面了。微小的 I/O 缓冲不应该打断视觉连贯性，
-          // 真正的国民级 App 宁可画面静止一瞬间，也绝不闪烁 Loading 圈。
           StreamBuilder<bool>(
             stream: player.stream.playing,
             builder: (context, playingSnapshot) {
               final isPlaying = playingSnapshot.data ?? false;
-              if (isPlaying || !isActive) return const SizedBox();
+              if (isPlaying || !widget.isActive) return const SizedBox();
               return const Center(
                 child: Icon(Icons.play_arrow, size: 80, color: Colors.white),
               );
@@ -329,13 +413,13 @@ class _VideoPlayerItem extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  video.authorName,
+                  widget.video.authorName,
                   style: AppTypography.headlineLarge
                       .copyWith(color: Colors.white, fontSize: 18),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  video.description,
+                  widget.video.description,
                   style: AppTypography.bodyLarge.copyWith(color: Colors.white),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -350,11 +434,11 @@ class _VideoPlayerItem extends StatelessWidget {
             right: 8,
             child: Column(
               children: [
-                _buildActionIcon(Icons.favorite_border, '8.6w'),
+                _buildActionIcon(Icons.favorite_border, _formatCount(widget.video.likeCount)),
                 const SizedBox(height: 20),
-                _buildActionIcon(Icons.comment_outlined, '1024'),
+                _buildActionIcon(Icons.comment_outlined, _formatCount(widget.video.commentCount)),
                 const SizedBox(height: 20),
-                _buildActionIcon(Icons.share_outlined, '分享'),
+                _buildActionIcon(Icons.share_outlined, _formatCount(widget.video.shareCount, fallback: '分享')),
                 const SizedBox(height: 20),
                 // 模拟旋转的光盘头像
                 Container(
@@ -371,6 +455,12 @@ class _VideoPlayerItem extends StatelessWidget {
                 // 发布/添加视频按钮，作为最顶端的UI设计重构，放在最末尾
                 GestureDetector(
                   onTap: () {
+                    if (SupabaseService.currentSession == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('请先登录后再发布视频')),
+                      );
+                      return;
+                    }
                     Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -399,29 +489,92 @@ class _VideoPlayerItem extends StatelessWidget {
             ),
           ),
 
-          // 5. 最底部进度条 (完全沉浸，极其微小)
+          // 5. 沉浸式动态进度条 (仅在主动暂停且非初始缓冲时显示，带平滑动画防闪烁)
           Positioned(
-            bottom: 60, // 刚好在底部导航栏上方
+            bottom: 50, // 稍微上移一点，留出 Slider 的点击热区
             left: 0,
             right: 0,
-            height: 2,
-            child: StreamBuilder<Duration>(
-              stream: player.stream.position,
-              builder: (context, snapshot) {
-                // 绝对同步读取底层状态，拒绝 StreamBuilder 嵌套导致的 state 丢失
-                final position = player.state.position;
-                final duration = player.state.duration;
+            child: StreamBuilder<bool>(
+              stream: player.stream.playing,
+              builder: (context, playingSnapshot) {
+                final isPlaying = playingSnapshot.data ?? false;
 
-                double progress = 0;
-                if (duration.inMilliseconds > 0) {
-                  progress = position.inMilliseconds / duration.inMilliseconds;
-                }
-                progress = progress.clamp(0.0, 1.0);
+                return StreamBuilder<Duration>(
+                  stream: player.stream.position,
+                  builder: (context, positionSnapshot) {
+                    final position = player.state.position;
+                    final duration = player.state.duration;
 
-                return LinearProgressIndicator(
-                  value: progress,
-                  backgroundColor: Colors.white.withValues(alpha: 0.2),
-                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                    // 【核心拦截逻辑升级：解决切后台闪烁与误触】：
+                    // 1. 如果视频不是当前焦点 (isActive == false) -> 绝对隐藏。
+                    // 2. 如果正在播放且没有被拖拽 -> 隐藏。
+                    // 3. 如果是刚切换过来的视频（进度极小）-> 隐藏。
+                    final isJustStarted = position.inMilliseconds < 100;
+                    bool shouldShow = true;
+
+                    if (!widget.isActive) {
+                      shouldShow = false; // 非焦点视频（如刚滑走的那一个）绝对不显示
+                    } else if (isPlaying && !_isDragging) {
+                      shouldShow = false;
+                    } else if (isJustStarted && !_isDragging) {
+                      shouldShow = false;
+                    }
+
+                    double progress = 0;
+                    if (duration.inMilliseconds > 0) {
+                      progress =
+                          position.inMilliseconds / duration.inMilliseconds;
+                    }
+                    progress = progress.clamp(0.0, 1.0);
+
+                    // 使用 AnimatedOpacity 平滑过渡，吃掉 Tab 切换瞬间的几十毫秒状态抖动
+                    return AnimatedOpacity(
+                      opacity: shouldShow ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 200),
+                      // 使用 IgnorePointer，确保在隐藏状态下绝对不可能发生误触
+                      child: IgnorePointer(
+                        ignoring: !shouldShow,
+                        child: SizedBox(
+                          height: 20, // 扩大 Slider 的触摸热区
+                          child: SliderTheme(
+                            data: SliderThemeData(
+                              trackHeight: 2,
+                              thumbShape: const RoundSliderThumbShape(
+                                  enabledThumbRadius: 6),
+                              overlayShape: const RoundSliderOverlayShape(
+                                  overlayRadius: 12),
+                              activeTrackColor: Colors.white,
+                              inactiveTrackColor:
+                                  Colors.white.withValues(alpha: 0.2),
+                              thumbColor: Colors.white,
+                            ),
+                            child: Slider(
+                              value: progress,
+                              onChangeStart: (value) {
+                                setState(() {
+                                  _isDragging = true;
+                                });
+                                player.pause(); // 拖拽开始时强制暂停
+                              },
+                              onChanged: (value) {
+                                final newPosition = Duration(
+                                  milliseconds:
+                                      (value * duration.inMilliseconds).toInt(),
+                                );
+                                player.seek(newPosition); // 实时预览画面帧
+                              },
+                              onChangeEnd: (value) {
+                                setState(() {
+                                  _isDragging = false;
+                                });
+                                player.play(); // 拖拽松手后恢复播放，进度条随后自动隐藏
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 );
               },
             ),
@@ -443,5 +596,14 @@ class _VideoPlayerItem extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  /// 商业级大厂数字格式化 (例如：10000 -> 1.0w)
+  String _formatCount(int count, {String fallback = '0'}) {
+    if (count == 0 && fallback != '0') return fallback;
+    if (count < 10000) return count.toString();
+    double wCount = count / 10000.0;
+    // 保留一位小数
+    return '${wCount.toStringAsFixed(1)}w';
   }
 }

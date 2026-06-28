@@ -1,5 +1,6 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 // @AI_CORE_MECHANISM: [2026-06-26] 基于 Riverpod 的 Supabase 注入
 final supabaseProvider = Provider<SupabaseClient>((ref) {
@@ -9,6 +10,41 @@ final supabaseProvider = Provider<SupabaseClient>((ref) {
 /// 核心数据/云端服务入口
 /// 提供认证、数据库、存储等全球加速服务的统一封装。
 /// 不再作为单例暴露业务方法，只保留基础的 init，业务应通过 Repository 层封装
+class UploadedMedia {
+  final String ownerId;
+  final String objectKey;
+  final String publicUrl;
+  final String mediaKind;
+  final String contentType;
+  final int bytes;
+  final String checksumSha256;
+  final String sourceFilename;
+
+  const UploadedMedia({
+    required this.ownerId,
+    required this.objectKey,
+    required this.publicUrl,
+    required this.mediaKind,
+    required this.contentType,
+    required this.bytes,
+    required this.checksumSha256,
+    required this.sourceFilename,
+  });
+
+  factory UploadedMedia.fromJson(Map<String, dynamic> json) {
+    return UploadedMedia(
+      ownerId: json['ownerId'] as String? ?? '',
+      objectKey: json['objectKey'] as String? ?? '',
+      publicUrl: json['publicUrl'] as String? ?? '',
+      mediaKind: json['mediaKind'] as String? ?? '',
+      contentType: json['contentType'] as String? ?? 'application/octet-stream',
+      bytes: json['bytes'] as int? ?? 0,
+      checksumSha256: json['checksumSha256'] as String? ?? '',
+      sourceFilename: json['sourceFilename'] as String? ?? '',
+    );
+  }
+}
+
 class SupabaseService {
   SupabaseService._(); // 私有化构造函数，实现单例模式
 
@@ -55,9 +91,6 @@ class SupabaseService {
     return await client.auth.updateUser(UserAttributes(data: metadata));
   }
 
-  // 本地缓存的临时视频（用于云端数据库未配置时的体验兜底）
-  static final List<Map<String, dynamic>> _localVideos = [];
-
   /// 2. 视频流获取：从云端数据库中查询视频列表
   static Future<List<Map<String, dynamic>>> fetchVideos({
     int limit = 10,
@@ -67,33 +100,26 @@ class SupabaseService {
       final data = await client
           .from('videos')
           .select()
-          .order('created_at', ascending: false) // 按最新时间排序
+          .eq('processing_status', 'ready')
+          .eq('lifecycle_status', 'active')
+          .order('created_at', ascending: false)
           .range(offset, offset + limit - 1);
 
-      // 合并本地临时发布的视频
-      final result = List<Map<String, dynamic>>.from(data);
-      if (offset == 0) {
-        result.insertAll(0, _localVideos.reversed);
-      }
-      return result;
+      return List<Map<String, dynamic>>.from(data);
     } catch (e) {
-      // 数据库未配置时，直接返回本地发布的视频
-      if (_localVideos.isNotEmpty) {
-        return _localVideos.reversed.toList();
-      }
+      // 【顶级架构约束】：绝对不提供本地假数据兜底。如果断网或报错，直接把错误抛给 UI 层处理。
       rethrow;
     }
   }
 
   /// 获取我发布的视频
-  static Future<List<Map<String, dynamic>>> fetchMyVideos(
-    String authorName,
-  ) async {
+  static Future<List<Map<String, dynamic>>> fetchMyVideos(String authorId) async {
     try {
       final data = await client
           .from('videos')
           .select()
-          .eq('author_name', authorName)
+          .eq('author_id', authorId)
+          .neq('lifecycle_status', 'deleted')
           .order('created_at', ascending: false);
       return List<Map<String, dynamic>>.from(data);
     } catch (e) {
@@ -101,36 +127,168 @@ class SupabaseService {
     }
   }
 
-  /// 上传媒体文件到存储，并返回公共 URL (适配 R2 链路)
-  static Future<String> uploadMedia(String fileName, dynamic fileBytes) async {
+  static Future<List<Map<String, dynamic>>> fetchMyMediaAssets() async {
+    final user = currentUser;
+    if (user == null) {
+      throw Exception('请先登录后再查看媒体资产');
+    }
+
+    final data = await client
+        .from('media_assets')
+        .select()
+        .eq('owner_id', user.id)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  /// 顶级架构：直通 R2 边缘节点上传链路
+  /// 通过 Worker 统一接管认证、对象命名与元数据返回
+  static Future<UploadedMedia> uploadMedia({
+    required String fileName,
+    required List<int> fileBytes,
+    required String mediaKind,
+    required String accessToken,
+    String contentType = 'application/octet-stream',
+  }) async {
     try {
-      // 尝试上传到 Supabase 绑定的 media bucket (兼容 R2)
-      await client.storage.from('media').uploadBinary(fileName, fileBytes);
-      return client.storage.from('media').getPublicUrl(fileName);
+      final workerUrl =
+          'https://gx-2030-media-upload.499755740.workers.dev'
+          '?filename=$fileName&kind=$mediaKind';
+
+      final response = await Dio().put(
+        workerUrl,
+        data: fileBytes,
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $accessToken',
+            'Content-Type': contentType,
+          },
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final payload = response.data is Map<String, dynamic>
+            ? response.data as Map<String, dynamic>
+            : Map<String, dynamic>.from(response.data as Map);
+        return UploadedMedia.fromJson(payload);
+      } else {
+        throw Exception('Worker 拒绝了请求: ${response.data}');
+      }
     } catch (e) {
-      // 兜底方案：如果 bucket 未创建，返回一个静态的 R2 体验地址保证主链路跑通
-      return 'https://pub-43cf2479c66540898a3717f1a1ba26cc.r2.dev/test_video_1.mp4';
+      throw Exception('直传 R2 边缘节点失败: $e');
     }
   }
 
-  /// 发布视频动态：写入数据库
+  /// 发布视频动态：写入数据库 (升级版：支持独立封面和默认计数器)
   static Future<void> publishVideo({
-    required String videoUrl,
+    required UploadedMedia videoUpload,
+    UploadedMedia? coverUpload,
     required String description,
+    required String authorId,
     required String authorName,
+    required double durationSeconds,
+    int? width,
+    int? height,
   }) async {
-    final videoData = {
-      'video_url': videoUrl,
-      'description': description,
+    final finalDescription = description.trim();
+
+    final dbVideoData = {
+      'author_id': authorId,
+      'video_url': videoUpload.publicUrl,
+      'video_object_key': videoUpload.objectKey,
+      'cover_url': coverUpload?.publicUrl ?? '',
+      'cover_object_key': coverUpload?.objectKey,
+      'description': finalDescription,
       'author_name': authorName,
       'created_at': DateTime.now().toIso8601String(),
+      'view_count': 0,
+      'like_count': 0,
+      'comment_count': 0,
+      'share_count': 0,
+      'duration_seconds': durationSeconds,
+      'width': width,
+      'height': height,
+      'processing_status': 'ready',
+      'ingest_source': 'desktop_client',
     };
-    try {
-      await client.from('videos').insert(videoData);
-    } catch (e) {
-      // 如果云端数据库未配置 (表不存在或无权限)，暂存到本地列表，保证产品体验闭环
-      _localVideos.add(videoData);
+
+    final insertedVideo = await client
+        .from('videos')
+        .insert(dbVideoData)
+        .select('id')
+        .single();
+
+    final videoId = insertedVideo['id'] as String;
+    final mediaRecords = <Map<String, dynamic>>[
+      {
+        'owner_id': authorId,
+        'entity_type': 'video',
+        'entity_id': videoId,
+        'media_kind': 'video',
+        'bucket_name': 'gx-2030-media',
+        'object_key': videoUpload.objectKey,
+        'public_url': videoUpload.publicUrl,
+        'mime_type': videoUpload.contentType,
+        'bytes': videoUpload.bytes,
+        'checksum_sha256': videoUpload.checksumSha256,
+        'source_filename': videoUpload.sourceFilename,
+        'status': 'ready',
+        'retention_class': 'standard',
+        'last_verified_at': DateTime.now().toIso8601String(),
+      },
+    ];
+
+    if (coverUpload != null) {
+      mediaRecords.add({
+        'owner_id': authorId,
+        'entity_type': 'video',
+        'entity_id': videoId,
+        'media_kind': 'cover',
+        'bucket_name': 'gx-2030-media',
+        'object_key': coverUpload.objectKey,
+        'public_url': coverUpload.publicUrl,
+        'mime_type': coverUpload.contentType,
+        'bytes': coverUpload.bytes,
+        'checksum_sha256': coverUpload.checksumSha256,
+        'source_filename': coverUpload.sourceFilename,
+        'status': 'ready',
+        'retention_class': 'standard',
+        'last_verified_at': DateTime.now().toIso8601String(),
+      });
     }
+
+    await client.from('media_assets').insert(mediaRecords);
+  }
+
+  static Future<void> archiveVideo(String videoId) async {
+    final user = currentUser;
+    if (user == null) {
+      throw Exception('请先登录后再归档视频');
+    }
+
+    final now = DateTime.now().toUtc();
+    final purgeAfter = now.add(const Duration(days: 180));
+
+    await client
+        .from('videos')
+        .update({
+          'lifecycle_status': 'archived',
+          'archived_at': now.toIso8601String(),
+        })
+        .eq('id', videoId)
+        .eq('author_id', user.id);
+
+    await client
+        .from('media_assets')
+        .update({
+          'status': 'archived',
+          'archived_at': now.toIso8601String(),
+          'purge_after': purgeAfter.toIso8601String(),
+          'last_verified_at': now.toIso8601String(),
+        })
+        .eq('entity_type', 'video')
+        .eq('entity_id', videoId)
+        .eq('owner_id', user.id);
   }
 
   /// 3. 商城瀑布流获取：拉取高并发商品数据

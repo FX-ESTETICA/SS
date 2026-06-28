@@ -7,6 +7,7 @@ import 'package:feature_im/feature_im.dart';
 import 'package:feature_profile/feature_profile.dart';
 import 'package:media_kit/media_kit.dart'; // 引入顶级播放器引擎
 import 'package:window_manager/window_manager.dart';
+import 'package:feature_video/src/domain/disk_cache_manager.dart'; // 引入本地缓存
 import 'router/app_router.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -52,6 +53,9 @@ void main() async {
 
   // 0. 初始化全局视频 C++ 引擎 (必须在 App 启动的最早期)
   MediaKit.ensureInitialized();
+  
+  // 初始化终极磁盘级视频缓存代理 (TikTok-level Cache)
+  await DiskVideoCacheManager.instance.initialize();
 
   // 1. 初始化全球云端引擎 (Supabase)
   // 使用您专属的意大利节点项目密钥，正式接管云端！

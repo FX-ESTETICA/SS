@@ -21,6 +21,18 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
   bool _isExporting = false;
   String _exportStatus = '';
 
+  String _guessContentType(String path, {required String fallback}) {
+    final lowerPath = path.toLowerCase();
+    if (lowerPath.endsWith('.webp')) return 'image/webp';
+    if (lowerPath.endsWith('.jpg') || lowerPath.endsWith('.jpeg')) {
+      return 'image/jpeg';
+    }
+    if (lowerPath.endsWith('.png')) return 'image/png';
+    if (lowerPath.endsWith('.mp4')) return 'video/mp4';
+    if (lowerPath.endsWith('.mov')) return 'video/quicktime';
+    return fallback;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -59,6 +71,12 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
     });
 
     try {
+      final session = SupabaseService.currentSession;
+      final user = SupabaseService.currentUser;
+      if (session == null || user == null) {
+        throw Exception('请先登录后再上传和发布视频');
+      }
+
       // 1. 获取用户在时间轴上截取的起止时间 (秒)
       final double start = _controller.startTrim.inMilliseconds / 1000.0;
       final double end = _controller.endTrim.inMilliseconds / 1000.0;
@@ -83,31 +101,54 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
           _exportStatus = '转码成功！正在上传至云端节点...';
         });
 
-        // 1. 读取视频文件字节
         final videoBytes = await result.videoFile.readAsBytes();
-        final fileName = 'video_${DateTime.now().millisecondsSinceEpoch}.mp4';
+        final videoFileName =
+            'video_${DateTime.now().millisecondsSinceEpoch}.mp4';
+        final coverFile = result.coverFile;
 
-        // 2. 上传至 R2 存储
-        String videoUrl =
-            await SupabaseService.uploadMedia(fileName, videoBytes);
+        final videoUpload = await SupabaseService.uploadMedia(
+          fileName: videoFileName,
+          fileBytes: videoBytes,
+          mediaKind: 'video',
+          accessToken: session.accessToken,
+          contentType: _guessContentType(
+            result.videoFile.path,
+            fallback: 'video/mp4',
+          ),
+        );
 
-        // 如果云端 R2 没配好返回了静态兜底，为了让用户能立刻看到刚发的视频，强制替换为本地绝对路径
-        if (videoUrl.contains('test_video_1.mp4')) {
-          videoUrl = 'file:///${result.videoFile.path.replaceAll('\\', '/')}';
+        UploadedMedia? coverUpload;
+        if (coverFile != null && await coverFile.exists()) {
+          final coverBytes = await coverFile.readAsBytes();
+          final coverFileName =
+              'cover_${DateTime.now().millisecondsSinceEpoch}.webp';
+          coverUpload = await SupabaseService.uploadMedia(
+            fileName: coverFileName,
+            fileBytes: coverBytes,
+            mediaKind: 'cover',
+            accessToken: session.accessToken,
+            contentType: _guessContentType(
+              coverFile.path,
+              fallback: 'image/webp',
+            ),
+          );
         }
 
         setState(() {
           _exportStatus = '上传完成，正在发布动态...';
         });
 
-        // 3. 写入 Supabase 数据库
-        final user = SupabaseService.currentUser;
-        final authorName = user?.email?.split('@').first ?? '@匿名极客';
+        final authorName = user.userMetadata?['display_name'] as String? ??
+            user.email?.split('@').first ??
+            '匿名用户';
 
         await SupabaseService.publishVideo(
-          videoUrl: videoUrl,
+          videoUpload: videoUpload,
+          coverUpload: coverUpload,
           description: '刚刚通过智选超级 APP 极限压缩上传了这条视频！🚀',
+          authorId: user.id,
           authorName: authorName,
+          durationSeconds: duration <= 0 ? 1 : duration,
         );
 
         setState(() {

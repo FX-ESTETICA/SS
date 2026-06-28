@@ -212,11 +212,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     });
     try {
       final user = SupabaseService.currentUser;
-      final authorName = user?.userMetadata?['display_name'] ??
-          user?.email?.split('@').first ??
-          '';
-      if (authorName.isNotEmpty) {
-        final videos = await SupabaseService.fetchMyVideos(authorName);
+      final authorId = user?.id ?? '';
+      if (authorId.isNotEmpty) {
+        final videos = await SupabaseService.fetchMyVideos(authorId);
         if (mounted) {
           setState(() {
             _myVideos = videos;

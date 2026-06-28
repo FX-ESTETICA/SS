@@ -6,3 +6,6 @@ build/
 *.log
 .idea/
 *.iml
+node_modules/
+.wrangler/
+supabase/.temp/

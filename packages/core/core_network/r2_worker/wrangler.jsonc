@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "gx-2030-media-upload",
+  "main": "src/index.js",
+  "compatibility_date": "2026-06-27",
+  "vars": {
+    "SUPABASE_URL": "https://izpolbeqdttjffbemvjr.supabase.co",
+    "SUPABASE_ANON_KEY": "sb_publishable_MFLwIbZIgBmUAnP9rqcSVQ_zzTwpq3y",
+    "PUBLIC_R2_BASE_URL": "https://pub-43cf2479c66540898a3717f1a1ba26cc.r2.dev"
+  },
+  "r2_buckets": [
+    {
+      "binding": "MEDIA_BUCKET",
+      "bucket_name": "gx-2030-media"
+    }
+  ]
+}

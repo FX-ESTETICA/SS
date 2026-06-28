@@ -25,29 +25,73 @@ class VideoProcessor {
     double coverTimeSeconds = 0.0,
     int maxDurationSeconds = 15,
   }) async {
-    // Windows 开发环境下直接跳过 FFmpeg (因为 ffmpeg_kit 不支持 Windows)，原片直传用于预览
-    if (Platform.isWindows) {
-      debugPrint('Windows 环境下跳过 FFmpeg 转码，直接使用原片。');
-      // 模拟一点延迟，让 UI 上的 loading 状态能被看见
-      await Future.delayed(const Duration(seconds: 1));
-      return VideoProcessResult(File(sourcePath), null);
-    }
-
     final tempDir = Directory.systemTemp;
     final timestamp = DateTime.now().millisecondsSinceEpoch;
 
     final targetVideoPath = '${tempDir.path}/${timestamp}_compressed.mp4';
     final targetCoverPath = '${tempDir.path}/${timestamp}_cover.webp';
 
-    // 1. FFmpeg 命令构建：强制转码 H.264，限制时长，压榨体积
+    // Windows 环境下调用系统中可能存在的 ffmpeg
+    if (Platform.isWindows) {
+      debugPrint('Windows 环境下尝试调用本地 FFmpeg 进程进行转码...');
+      try {
+        // Windows 的转码参数，同样强力注入 faststart
+        final args = [
+          '-y', // 覆盖输出文件
+          '-ss', '$startTimeSeconds',
+          '-i', sourcePath,
+          '-t', '$maxDurationSeconds',
+          '-vf', 'scale=-2:720',
+          '-c:v', 'libx264',
+          '-crf', '28',
+          '-preset', 'veryfast',
+          '-c:a', 'aac',
+          '-b:a', '128k',
+          '-movflags', 'faststart',
+          targetVideoPath
+        ];
+        
+        final result = await Process.run('ffmpeg', args);
+        if (result.exitCode != 0) {
+          debugPrint('Windows FFmpeg 转码失败: ${result.stderr}');
+          // 如果系统没有 ffmpeg，为了不阻断流程，只能妥协返回原片，但必须警告用户
+          debugPrint('==================================================================');
+          debugPrint('【致命警告】: 系统未安装 FFmpeg！无法注入 faststart。');
+          debugPrint('为了达到顶级秒开体验，请在电脑上安装 FFmpeg 并添加到环境变量。');
+          debugPrint('当前将回退到原片直传，您将无法体验到真正的秒开！');
+          debugPrint('==================================================================');
+          await Future.delayed(const Duration(seconds: 1));
+          return VideoProcessResult(File(sourcePath), null);
+        }
+
+        // 抽取封面
+        final coverArgs = [
+          '-y',
+          '-ss', '$coverTimeSeconds',
+          '-i', sourcePath,
+          '-vframes', '1',
+          '-c:v', 'libwebp',
+          targetCoverPath
+        ];
+        await Process.run('ffmpeg', coverArgs);
+        
+        return VideoProcessResult(File(targetVideoPath), File(targetCoverPath));
+      } catch (e) {
+        debugPrint('无法调用 FFmpeg: $e');
+        return VideoProcessResult(File(sourcePath), null);
+      }
+    }
+
+    // 1. FFmpeg 命令构建：强制转码 H.264，限制时长，压榨体积，【核心：注入 faststart】
     // -ss : 跳转到指定截取开始时间
     // -t 15 : 强制最大 15 秒
     // -vf scale=-2:720 : 动态缩放，高度限制为 720p，宽度自动对齐
     // -c:v libx264 : 使用 H.264 编码 (保证全平台兼容)
     // -crf 28 : 控制画质和体积平衡，数字越大体积越小画质越低
     // -preset veryfast : 转码速度优先
+    // -movflags faststart : 【降维打击核心】将 moov atom 移动到文件头部，实现真正的“边下边播”！
     final videoCmd =
-        '-ss $startTimeSeconds -i "$sourcePath" -t $maxDurationSeconds -vf scale=-2:720 -c:v libx264 -crf 28 -preset veryfast -c:a aac -b:a 128k "$targetVideoPath"';
+        '-ss $startTimeSeconds -i "$sourcePath" -t $maxDurationSeconds -vf scale=-2:720 -c:v libx264 -crf 28 -preset veryfast -c:a aac -b:a 128k -movflags faststart "$targetVideoPath"';
 
     // 执行视频转码
     FFmpegSession videoSession = await FFmpegKit.execute(videoCmd);

@@ -1,5 +1,6 @@
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'disk_cache_manager.dart'; // 引入磁盘级缓存调度中心
 
 /// 核心域：短视频底层引擎池 (Ring Buffer)
 /// 彻底接管 C++ 播放器生命周期，消灭 UI 滚动时的创建/销毁开销
@@ -40,35 +41,60 @@ class VideoEnginePool {
   VideoController getController(int index) => _controllers[index % poolSize];
   Player getPlayer(int index) => _players[index % poolSize];
 
-  /// 核心状态机：滑动窗口预加载调度
+  /// 核心状态机：滑动窗口预加载调度 (终极重构版 - 结合磁盘预读)
   void focusIndex(int currentIndex, List<String> videoUrls) {
     if (videoUrls.isEmpty || !_isInitialized) return;
 
-    // 遍历当前窗口的前中后三个位置
-    for (int i = -1; i <= 1; i++) {
-      final targetIndex = currentIndex + i;
-      // 边界越界保护
-      if (targetIndex < 0 || targetIndex >= videoUrls.length) continue;
+    // 0. 触发本地磁盘极限预加载 (Fire and Forget)
+    // 提前抓取当前及后面 3 个视频，丢给后台 Dio 线程去静默下载到硬盘
+    final preloadUrls = videoUrls.skip(currentIndex).take(4).toList();
+    DiskVideoCacheManager.instance.preload(preloadUrls);
 
-      final poolIndex = targetIndex % poolSize;
-      final player = _players[poolIndex];
-      final url = videoUrls[targetIndex];
+    // 1. 绝对优先保证当前焦点视频的播放 (The Absolute Priority)
+    final currentPoolIndex = currentIndex % poolSize;
+    final currentPlayer = _players[currentPoolIndex];
+    final currentUrl = videoUrls[currentIndex];
 
-      // 如果当前槽位的 URL 发生变更，执行底层 I/O 加载
-      if (_loadedUrls[poolIndex] != url) {
-        // 【终极防卡顿修复】：如果是焦点视频 (i == 0)，必须在 open 时直接传入 play: true。
-        // 绝对不能先 open(play: false) 紧接着再调用 play()，这会导致 C++ 底层时序撕裂，引发卡顿和假缓冲！
-        player.open(Media(url), play: i == 0);
-        _loadedUrls[poolIndex] = url;
-      } else {
-        // URL 没变，说明已经预热在显存中，直接秒切播放/暂停状态
-        if (i == 0) {
-          player.play();
+    if (_loadedUrls[currentPoolIndex] != currentUrl) {
+      // 拦截器：向磁盘管理器请求终极播放地址
+      // 如果已经预下载完了，这里返回的就是 file:/// 绝对路径（0延迟，无网络开销）
+      final playUrl = DiskVideoCacheManager.instance.getPlayableUrl(currentUrl);
+      
+      // 焦点视频发生了物理替换，直接暴力 open 并播放
+      currentPlayer.open(Media(playUrl), play: true);
+      _loadedUrls[currentPoolIndex] = currentUrl;
+    } else {
+      // 已经在内存中，瞬间拉起
+      currentPlayer.play();
+    }
+
+    // 2. 异步静默处理池内前后指针的 C++ 引擎准备
+    // 延迟 100ms 执行，把极其宝贵的 I/O 和 CPU 算力绝对让给当前视频的第一帧解码
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (!_isInitialized) return;
+      
+      // 准备前一个和后一个视频的引擎状态
+      for (int i = -1; i <= 1; i++) {
+        if (i == 0) continue; // 当前焦点刚才已经处理过了
+
+        final targetIndex = currentIndex + i;
+        if (targetIndex < 0 || targetIndex >= videoUrls.length) continue;
+
+        final poolIndex = targetIndex % poolSize;
+        final player = _players[poolIndex];
+        final url = videoUrls[targetIndex];
+
+        if (_loadedUrls[poolIndex] != url) {
+          final playUrl = DiskVideoCacheManager.instance.getPlayableUrl(url);
+          // 预加载视频：静音、不自动播放、让底层去嗅探 metadata
+          player.open(Media(playUrl), play: false);
+          _loadedUrls[poolIndex] = url;
         } else {
+          // 如果已经在池子里了，强制确保它是暂停的，绝对不能抢占焦点视频的算力和音频通道
           player.pause();
         }
       }
-    }
+    });
   }
 
   /// 在非 Tab 激活时，强制冻结所有实例的解码
