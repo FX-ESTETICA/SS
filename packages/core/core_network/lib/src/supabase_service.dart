@@ -113,14 +113,22 @@ class SupabaseService {
   }
 
   /// 获取我发布的视频
-  static Future<List<Map<String, dynamic>>> fetchMyVideos(String authorId) async {
+  static Future<List<Map<String, dynamic>>> fetchMyVideos(
+    String authorId, {
+    String? authorIdentityId,
+  }) async {
     try {
-      final data = await client
+      final query = client
           .from('videos')
           .select()
           .eq('author_id', authorId)
-          .neq('lifecycle_status', 'deleted')
-          .order('created_at', ascending: false);
+          .neq('lifecycle_status', 'deleted');
+
+      final data = authorIdentityId == null
+          ? await query.order('created_at', ascending: false)
+          : await query
+              .eq('author_identity_id', authorIdentityId)
+              .order('created_at', ascending: false);
       return List<Map<String, dynamic>>.from(data);
     } catch (e) {
       rethrow;
@@ -151,8 +159,7 @@ class SupabaseService {
     String contentType = 'application/octet-stream',
   }) async {
     try {
-      final workerUrl =
-          'https://gx-2030-media-upload.499755740.workers.dev'
+      final workerUrl = 'https://zhixuan-media-upload.499755740.workers.dev'
           '?filename=$fileName&kind=$mediaKind';
 
       final response = await Dio().put(
@@ -185,6 +192,7 @@ class SupabaseService {
     UploadedMedia? coverUpload,
     required String description,
     required String authorId,
+    required String authorIdentityId,
     required String authorName,
     required double durationSeconds,
     int? width,
@@ -194,6 +202,7 @@ class SupabaseService {
 
     final dbVideoData = {
       'author_id': authorId,
+      'author_identity_id': authorIdentityId,
       'video_url': videoUpload.publicUrl,
       'video_object_key': videoUpload.objectKey,
       'cover_url': coverUpload?.publicUrl ?? '',
@@ -212,20 +221,18 @@ class SupabaseService {
       'ingest_source': 'desktop_client',
     };
 
-    final insertedVideo = await client
-        .from('videos')
-        .insert(dbVideoData)
-        .select('id')
-        .single();
+    final insertedVideo =
+        await client.from('videos').insert(dbVideoData).select('id').single();
 
     final videoId = insertedVideo['id'] as String;
     final mediaRecords = <Map<String, dynamic>>[
       {
         'owner_id': authorId,
+        'owner_identity_id': authorIdentityId,
         'entity_type': 'video',
         'entity_id': videoId,
         'media_kind': 'video',
-        'bucket_name': 'gx-2030-media',
+        'bucket_name': 'zhixuan-media',
         'object_key': videoUpload.objectKey,
         'public_url': videoUpload.publicUrl,
         'mime_type': videoUpload.contentType,
@@ -241,10 +248,11 @@ class SupabaseService {
     if (coverUpload != null) {
       mediaRecords.add({
         'owner_id': authorId,
+        'owner_identity_id': authorIdentityId,
         'entity_type': 'video',
         'entity_id': videoId,
         'media_kind': 'cover',
-        'bucket_name': 'gx-2030-media',
+        'bucket_name': 'zhixuan-media',
         'object_key': coverUpload.objectKey,
         'public_url': coverUpload.publicUrl,
         'mime_type': coverUpload.contentType,
@@ -260,7 +268,10 @@ class SupabaseService {
     await client.from('media_assets').insert(mediaRecords);
   }
 
-  static Future<void> archiveVideo(String videoId) async {
+  static Future<void> archiveVideo(
+    String videoId, {
+    String? authorIdentityId,
+  }) async {
     final user = currentUser;
     if (user == null) {
       throw Exception('请先登录后再归档视频');
@@ -269,7 +280,7 @@ class SupabaseService {
     final now = DateTime.now().toUtc();
     final purgeAfter = now.add(const Duration(days: 180));
 
-    await client
+    final videoUpdate = client
         .from('videos')
         .update({
           'lifecycle_status': 'archived',
@@ -277,8 +288,12 @@ class SupabaseService {
         })
         .eq('id', videoId)
         .eq('author_id', user.id);
+    if (authorIdentityId != null && authorIdentityId.isNotEmpty) {
+      videoUpdate.eq('author_identity_id', authorIdentityId);
+    }
+    await videoUpdate;
 
-    await client
+    final mediaUpdate = client
         .from('media_assets')
         .update({
           'status': 'archived',
@@ -289,6 +304,10 @@ class SupabaseService {
         .eq('entity_type', 'video')
         .eq('entity_id', videoId)
         .eq('owner_id', user.id);
+    if (authorIdentityId != null && authorIdentityId.isNotEmpty) {
+      mediaUpdate.eq('owner_identity_id', authorIdentityId);
+    }
+    await mediaUpdate;
   }
 
   /// 3. 商城瀑布流获取：拉取高并发商品数据

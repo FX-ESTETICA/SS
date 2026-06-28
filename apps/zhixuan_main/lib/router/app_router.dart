@@ -11,11 +11,13 @@ final GoRouter appRouter = GoRouter(
   routes: [
     GoRoute(
       path: '/',
-      builder: (context, state) => const MainScreen(),
+      pageBuilder: (context, state) => const NoTransitionPage(
+        child: MainScreen(),
+      ),
     ),
     GoRoute(
       path: '/shop/detail',
-      builder: (context, state) {
+      pageBuilder: (context, state) {
         final extra = state.extra as Map<String, dynamic>? ?? {};
 
         // 构建一个模拟的 ProductModel 用于跳转
@@ -30,16 +32,20 @@ final GoRouter appRouter = GoRouter(
           subCategory: '附近服务',
         );
 
-        return LocalServiceDetailScreen(
-          product: mockProduct,
-          isStore: false,
-          isMerchantMode: false,
+        return NoTransitionPage(
+          child: LocalServiceDetailScreen(
+            product: mockProduct,
+            isStore: false,
+            isMerchantMode: false,
+          ),
         );
       },
     ),
     GoRoute(
       path: '/memory-bridge',
-      builder: (context, state) => const MemoryBridgeEntryScreen(),
+      pageBuilder: (context, state) => const NoTransitionPage(
+        child: MemoryBridgeEntryScreen(),
+      ),
     ),
   ],
 );

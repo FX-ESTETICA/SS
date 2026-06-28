@@ -52,7 +52,7 @@
 - **Anon Key:** sb_publishable_MFLwIbZIgBmUAnP9rqcSVQ_zzTwpq3y
 - **Database as Code:** 数据库结构不保存在代码里，而是保存在 `supabase/migrations/` 目录下。
   - *AI 必读:* 新会话必须 `ls supabase/migrations` 并阅读 SQL，了解 `videos`, `messages`, `products` 等表的最新字段。
-- **存储方案:** 媒体链接必须使用 `https://pub-43cf2479c66540898a3717f1a1ba26cc.r2.dev` 作为前缀。
+- **存储方案:** 媒体上传统一走 `https://zhixuan-media-upload.499755740.workers.dev`，公开访问统一走 `https://zhixuan-media-upload.499755740.workers.dev/objects/` 前缀，R2 正式桶名为 `zhixuan-media`。
 
 ## 5. 避坑指南与自动化工作流 (Crucial Lessons Learned - 绝不能再犯的错误)
 

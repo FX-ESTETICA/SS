@@ -184,48 +184,79 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   final ScrollController _feedScrollController = ScrollController();
   late final PageController _themePageController;
   Timer? _autoScrollTimer;
-  StreamSubscription? _authSubscription;
   bool _isLoggingIn = false;
   List<Map<String, dynamic>> _myVideos = [];
+  final Map<String, List<Map<String, dynamic>>> _videosByIdentity = {};
   bool _isLoadingVideos = false;
+  String? _lastFetchedIdentityId;
+  String? _scheduledIdentityFetchId;
+
+  void _scheduleIdentityRefresh() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(identityControllerProvider.notifier).refresh();
+    });
+  }
 
   @override
   void initState() {
     super.initState();
     _themePageController = PageController(
       viewportFraction: 0.54,
-      initialPage: _themeIndexOf(BackgroundManager.instance.currentBackground.value),
+      initialPage:
+          _themeIndexOf(BackgroundManager.instance.currentBackground.value),
     );
 
-    // 监听全局登录状态变化
-    // @AI_CONTEXT: [2026-06-26] 使用 Riverpod 监听登录状态
-    _authSubscription =
-        ref.read(supabaseProvider).auth.onAuthStateChange.listen((data) {
-      if (mounted) {
-        setState(() {}); // 刷新 UI
-        if (_checkIsLoggedIn()) {
-          _fetchMyVideos();
-        }
-      }
-    });
-
     if (_checkIsLoggedIn()) {
-      _fetchMyVideos();
+      _scheduleIdentityRefresh();
+    } else {
+      _resetIdentityScopedVideos();
     }
   }
 
-  Future<void> _fetchMyVideos() async {
+  void _resetIdentityScopedVideos() {
+    _myVideos = [];
+    _videosByIdentity.clear();
+    _isLoadingVideos = false;
+    _lastFetchedIdentityId = null;
+    _scheduledIdentityFetchId = null;
+  }
+
+  void _showCachedVideosForIdentity(String authorIdentityId) {
     setState(() {
-      _isLoadingVideos = true;
+      _lastFetchedIdentityId = authorIdentityId;
+      _myVideos = List<Map<String, dynamic>>.from(
+        _videosByIdentity[authorIdentityId] ?? const [],
+      );
+      _isLoadingVideos = !_videosByIdentity.containsKey(authorIdentityId);
     });
+  }
+
+  Future<void> _fetchMyVideos({
+    required String authorIdentityId,
+    bool showLoadingIndicator = true,
+  }) async {
+    if (showLoadingIndicator) {
+      setState(() {
+        _isLoadingVideos = true;
+      });
+    }
     try {
       final user = SupabaseService.currentUser;
       final authorId = user?.id ?? '';
       if (authorId.isNotEmpty) {
-        final videos = await SupabaseService.fetchMyVideos(authorId);
+        final videos = await SupabaseService.fetchMyVideos(
+          authorId,
+          authorIdentityId: authorIdentityId,
+        );
         if (mounted) {
           setState(() {
-            _myVideos = videos;
+            _videosByIdentity[authorIdentityId] = videos;
+            if (_lastFetchedIdentityId == authorIdentityId) {
+              _myVideos = videos;
+            }
+            _lastFetchedIdentityId = authorIdentityId;
+            _scheduledIdentityFetchId = null;
           });
         }
       }
@@ -235,6 +266,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       if (mounted) {
         setState(() {
           _isLoadingVideos = false;
+          if (_scheduledIdentityFetchId == authorIdentityId) {
+            _scheduledIdentityFetchId = null;
+          }
         });
       }
     }
@@ -249,7 +283,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     _themePageController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
-    _authSubscription?.cancel();
     super.dispose();
   }
 
@@ -272,17 +305,38 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_themePageController.hasClients) return;
-      _themePageController.animateToPage(
-        targetPage,
-        duration: const Duration(milliseconds: 260),
-        curve: Curves.easeOutCubic,
-      );
+      _themePageController.jumpToPage(targetPage);
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final isLoggedIn = _checkIsLoggedIn();
+    final identityHub = ref.watch(identityControllerProvider).asData?.value;
+    if (isLoggedIn &&
+        identityHub != null &&
+        _lastFetchedIdentityId != identityHub.activeIdentity.id &&
+        _scheduledIdentityFetchId != identityHub.activeIdentity.id) {
+      _scheduledIdentityFetchId = identityHub.activeIdentity.id;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final activeIdentityId = identityHub.activeIdentity.id;
+        _showCachedVideosForIdentity(activeIdentityId);
+        unawaited(
+          _fetchMyVideos(
+            authorIdentityId: activeIdentityId,
+            showLoadingIndicator:
+                !_videosByIdentity.containsKey(activeIdentityId),
+          ),
+        );
+      });
+    } else if (!isLoggedIn &&
+        (_myVideos.isNotEmpty ||
+            _videosByIdentity.isNotEmpty ||
+            _lastFetchedIdentityId != null)) {
+      _resetIdentityScopedVideos();
+    }
+
     return Scaffold(
       backgroundColor: Colors.transparent, // 必须透明以露出全局流光
       body: AnimatedSpatialBackground(
@@ -295,9 +349,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             // 2. 内容层
             SafeArea(
               child: isLoggedIn
-                  ? (_isSettingsOpen
-                        ? const SizedBox.shrink()
-                        : _buildLoggedInProfile())
+                  ? (identityHub == null
+                      ? const Center(
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                          ),
+                        )
+                      : (_isSettingsOpen
+                          ? const SizedBox.shrink()
+                          : _buildLoggedInProfile(identityHub)))
                   : _buildLoginView(),
             ),
             if (isLoggedIn && _isSettingsOpen) _buildSettingsDrawerOverlay(),
@@ -319,25 +379,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
           const Spacer(),
 
-          // 底部：输入框或第三方登录区域的动态切换
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 300),
-            transitionBuilder: (Widget child, Animation<double> animation) {
-              return FadeTransition(
-                opacity: animation,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, 0.1),
-                    end: Offset.zero,
-                  ).animate(animation),
-                  child: child,
-                ),
-              );
-            },
-            child: _showPasswordInput
-                ? _buildPasswordSection()
-                : _buildEmailAndThirdPartySection(),
-          ),
+          // 底部：输入框或第三方登录区域即时切换
+          _showPasswordInput
+              ? _buildPasswordSection()
+              : _buildEmailAndThirdPartySection(),
           const SizedBox(height: 40),
         ],
       ),
@@ -345,7 +390,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }
 
   /// 已登录状态的“我的页”视图 (无边框悬浮风格)
-  Widget _buildLoggedInProfile() {
+  Widget _buildLoggedInProfile(IdentityHub identityHub) {
     return Stack(
       children: [
         // 主内容滚动区
@@ -354,11 +399,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             children: [
               const SizedBox(height: 60),
               // 顶部：左星座 + 中头像 + 右ID
-              _buildLoggedInHeader(),
+              _buildLoggedInHeader(identityHub),
 
               const SizedBox(height: 16),
               // 名字与动态
-              _buildUserInfo(),
+              _buildUserInfo(identityHub),
 
               const SizedBox(height: 32),
               // 底部瀑布流内容
@@ -463,11 +508,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }
 
   /// 登录后的顶部 Header：左侧星座、居中头像、右侧生活ID
-  Widget _buildLoggedInHeader() {
-    final user = SupabaseService.currentUser;
-    final metadata = user?.userMetadata ?? {};
-    final avatarUrl = resolveCurrentUserAvatarUrl();
-    final userId9 = metadata['user_id_9'] as String? ?? '8848';
+  Widget _buildLoggedInHeader(IdentityHub identityHub) {
+    final avatarUrl = resolveCurrentUserAvatarUrl(
+      sharedAvatarUrl: identityHub.profile.avatarUrl,
+    );
+    final activeIdentity = identityHub.activeIdentity;
+    final nextIdentity = _nextEnabledIdentity(identityHub);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -487,9 +533,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    '双子座',
-                    style: TextStyle(
+                  Text(
+                    identityHub.profile.zodiacSign,
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 13,
                       letterSpacing: 2,
@@ -533,31 +579,69 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             ),
           ),
 
-          // 右侧：生活 ID（居中于右半边）
+          // 右侧：单标签身份切换 + 独立 ID
           Expanded(
             child: Center(
-              child: Column(
-                children: [
-                  const Text(
-                    '生活',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: 2,
+              child: MouseRegion(
+                cursor: nextIdentity != null
+                    ? SystemMouseCursors.click
+                    : SystemMouseCursors.basic,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: nextIdentity == null
+                      ? null
+                      : () => _switchIdentity(nextIdentity),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Column(
+                          key: ValueKey(activeIdentity.id),
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              activeIdentity.kind.label,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 2.2,
+                                height: 1,
+                              ),
+                            ),
+                            const SizedBox(height: 9),
+                            Text(
+                              'ID: ${activeIdentity.publicId}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                letterSpacing: 1.1,
+                                fontWeight: FontWeight.w300,
+                                height: 1,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (nextIdentity != null) ...[
+                          const SizedBox(width: 8),
+                          Transform.translate(
+                            offset: const Offset(0, -9),
+                            child: Icon(
+                              Icons.sync_rounded,
+                              size: 10,
+                              color: Colors.white.withValues(alpha: 0.42),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'ID: $userId9',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      letterSpacing: 1,
-                      fontWeight: FontWeight.w300,
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -600,10 +684,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         contentType: 'image/webp',
       );
 
-      // 更新 Metadata
-      final metadata = Map<String, dynamic>.from(user.userMetadata ?? {});
-      metadata['avatar_url'] = avatarUpload.publicUrl;
-      await SupabaseService.updateUserMetadata(metadata);
+      await ref
+          .read(identityControllerProvider.notifier)
+          .updateSharedAvatar(avatarUpload.publicUrl);
 
       if (mounted) setState(() {});
     } catch (e) {
@@ -615,13 +698,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }
 
   /// 登录后的名字与个性签名
-  Widget _buildUserInfo() {
-    final user = SupabaseService.currentUser;
-    final metadata = user?.userMetadata ?? {};
-    final userName = metadata['display_name'] as String? ??
-        user?.email?.split('@').first ??
-        '匿名极客';
-
+  Widget _buildUserInfo(IdentityHub identityHub) {
+    final activeIdentity = identityHub.activeIdentity;
     return Column(
       children: [
         // 名字
@@ -629,7 +707,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
-              userName,
+              activeIdentity.displayName,
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 32,
@@ -639,7 +717,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             ),
             const SizedBox(width: 8),
             GestureDetector(
-              onTap: _updateDisplayName,
+              onTap: () => _updateDisplayName(activeIdentity),
               child: Icon(
                 Icons.history_edu,
                 color: Colors.white.withValues(alpha: 0.8),
@@ -650,9 +728,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         ),
         const SizedBox(height: 12),
         // 个性签名（生活动态）
-        const Text(
-          '“今天又是充满代码的一天...”',
-          style: TextStyle(
+        Text(
+          identityHub.profile.sharedStatus,
+          style: const TextStyle(
             color: Colors.white,
             fontSize: 14,
             fontStyle: FontStyle.italic,
@@ -663,35 +741,79 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     );
   }
 
-  Future<void> _updateDisplayName() async {
+  Future<void> _switchIdentity(UserIdentityRecord identity) async {
+    _showCachedVideosForIdentity(identity.id);
+    try {
+      await ref
+          .read(identityControllerProvider.notifier)
+          .switchActiveIdentity(identity.id);
+      if (!mounted) return;
+      unawaited(
+        _fetchMyVideos(
+          authorIdentityId: identity.id,
+          showLoadingIndicator: !_videosByIdentity.containsKey(identity.id),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('身份切换失败: $e')));
+      }
+    }
+  }
+
+  UserIdentityRecord? _nextEnabledIdentity(IdentityHub identityHub) {
+    final enabledIdentities =
+        identityHub.identities.where((identity) => identity.isEnabled).toList();
+    if (enabledIdentities.length < 2) {
+      return null;
+    }
+
+    final activeIndex = enabledIdentities.indexWhere(
+      (identity) => identity.id == identityHub.activeIdentity.id,
+    );
+    if (activeIndex == -1) {
+      return enabledIdentities.first;
+    }
+
+    return enabledIdentities[(activeIndex + 1) % enabledIdentities.length];
+  }
+
+  Future<void> _updateDisplayName(UserIdentityRecord identity) async {
     final TextEditingController nameController = TextEditingController();
-    final result = await showDialog<String>(
-      context: context,
-      builder: (context) {
+    final result = await context.showInstantDialog<String>(
+      barrierDismissible: true,
+      barrierLabel: 'edit-identity-name',
+      barrierColor: Colors.black.withValues(alpha: 0.18),
+      builder: (dialogContext) {
         return AlertDialog(
           backgroundColor: Colors.grey[900],
-          title: const Text('修改昵称', style: TextStyle(color: Colors.white)),
+          title: Text(
+            '修改${identity.kind.label}名称',
+            style: const TextStyle(color: Colors.white),
+          ),
           content: TextField(
             controller: nameController,
             style: const TextStyle(color: Colors.white),
-            decoration: const InputDecoration(
-              hintText: '请输入新昵称',
-              hintStyle: TextStyle(color: Colors.white54),
-              enabledBorder: UnderlineInputBorder(
+            decoration: InputDecoration(
+              hintText: '请输入新的${identity.kind.label}名称',
+              hintStyle: const TextStyle(color: Colors.white54),
+              enabledBorder: const UnderlineInputBorder(
                 borderSide: BorderSide(color: Colors.white24),
               ),
-              focusedBorder: UnderlineInputBorder(
+              focusedBorder: const UnderlineInputBorder(
                 borderSide: BorderSide(color: Colors.white),
               ),
             ),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(dialogContext),
               child: const Text('取消', style: TextStyle(color: Colors.white54)),
             ),
             TextButton(
-              onPressed: () => Navigator.pop(context, nameController.text),
+              onPressed: () =>
+                  Navigator.pop(dialogContext, nameController.text),
               child: const Text('保存', style: TextStyle(color: Colors.white)),
             ),
           ],
@@ -700,12 +822,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     );
 
     if (result != null && result.trim().isNotEmpty) {
-      final user = SupabaseService.currentUser;
-      final metadata = Map<String, dynamic>.from(user?.userMetadata ?? {});
-      metadata['display_name'] = result.trim();
-
       try {
-        await SupabaseService.updateUserMetadata(metadata);
+        await ref
+            .read(identityControllerProvider.notifier)
+            .updateIdentityDisplayName(
+              identityId: identity.id,
+              displayName: result.trim(),
+            );
         if (mounted) setState(() {});
       } catch (e) {
         if (mounted) {
@@ -726,13 +849,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     }
 
     if (_myVideos.isEmpty) {
-      return const SizedBox(
+      final identityLabel =
+          ref.watch(activeIdentityProvider)?.kind.label ?? '当前身份';
+      return SizedBox(
         height: 240,
         child: Center(
           child: Text(
-            '暂无发布动态\n点击底部 "+" 号发布第一条短视频吧',
+            '$identityLabel 暂无发布内容\n点击底部 "+" 号发布第一条短视频吧',
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.white,
               height: 1.5,
               fontWeight: FontWeight.w300,
@@ -834,79 +959,65 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           ),
           Align(
             alignment: Alignment.centerRight,
-            child: TweenAnimationBuilder<double>(
-              tween: Tween(begin: 1, end: 0),
-              duration: const Duration(milliseconds: 260),
-              curve: Curves.easeOutCubic,
-              builder: (context, value, child) {
-                return Transform.translate(
-                  offset: Offset(48 * value, 0),
-                  child: Opacity(
-                    opacity: 1 - value,
-                    child: child,
-                  ),
-                );
-              },
-              child: Padding(
-                padding: const EdgeInsets.only(
-                  top: 28,
-                  right: 20,
-                  bottom: 28,
-                ),
-                child: SizedBox(
-                  width: 300,
-                  height: 560,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 24,
-                                vertical: 12,
-                              ),
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: CurrentUserAvatar(
-                                  size: 52,
-                                  onTap: _pickAndUpdateAvatar,
-                                  fallbackIconSize: 24,
-                                ),
+            child: Padding(
+              padding: const EdgeInsets.only(
+                top: 28,
+                right: 20,
+                bottom: 28,
+              ),
+              child: SizedBox(
+                width: 300,
+                height: 560,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 12,
+                            ),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: CurrentUserAvatar(
+                                size: 52,
+                                onTap: _pickAndUpdateAvatar,
+                                fallbackIconSize: 24,
                               ),
                             ),
                           ),
-                          IconButton(
-                            onPressed: _closeSettingsDrawer,
-                            icon: const Icon(
-                              Icons.close,
-                              color: Colors.white,
-                              size: 22,
-                            ),
+                        ),
+                        IconButton(
+                          onPressed: _closeSettingsDrawer,
+                          icon: const Icon(
+                            Icons.close,
+                            color: Colors.white,
+                            size: 22,
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      _buildThemeSelector(),
-                      const SizedBox(height: 28),
-                      _buildSettingsItem('账号安全', Icons.security),
-                      _buildSettingsItem('更改邮箱', Icons.email_outlined),
-                      _buildSettingsItem('项目记忆桥接', Icons.memory_outlined),
-                      const Spacer(),
-                      _buildSettingsItem(
-                        '退出账号',
-                        Icons.logout,
-                        color: Colors.redAccent,
-                      ),
-                      const SizedBox(height: 16),
-                      _buildSettingsItem(
-                        '注销账号',
-                        Icons.delete_forever,
-                        color: Colors.white,
-                      ),
-                    ],
-                  ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _buildThemeSelector(),
+                    const SizedBox(height: 28),
+                    _buildSettingsItem('账号安全', Icons.security),
+                    _buildSettingsItem('更改邮箱', Icons.email_outlined),
+                    _buildSettingsItem('项目记忆桥接', Icons.memory_outlined),
+                    const Spacer(),
+                    _buildSettingsItem(
+                      '退出账号',
+                      Icons.logout,
+                      color: Colors.redAccent,
+                    ),
+                    const SizedBox(height: 16),
+                    _buildSettingsItem(
+                      '注销账号',
+                      Icons.delete_forever,
+                      color: Colors.white,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -968,8 +1079,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     required BackgroundThemePreset preset,
     required bool isSelected,
   }) {
-    return AnimatedPadding(
-      duration: const Duration(milliseconds: 220),
+    return Padding(
       padding: EdgeInsets.symmetric(
         horizontal: 8,
         vertical: isSelected ? 0 : 10,
@@ -977,18 +1087,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () {
-          _themePageController.animateToPage(
-            index,
-            duration: const Duration(milliseconds: 260),
-            curve: Curves.easeOutCubic,
-          );
+          _themePageController.jumpToPage(index);
           BackgroundManager.instance.setBackground(preset.type);
         },
-        child: AnimatedScale(
-          duration: const Duration(milliseconds: 220),
+        child: Transform.scale(
           scale: isSelected ? 1.0 : 0.88,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 220),
+          child: DecoratedBox(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(24),
             ),

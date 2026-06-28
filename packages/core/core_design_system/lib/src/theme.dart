@@ -2,6 +2,21 @@ import 'package:flutter/material.dart';
 import 'colors.dart';
 import 'typography.dart';
 
+class _NoAnimationPageTransitionsBuilder extends PageTransitionsBuilder {
+  const _NoAnimationPageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    return child;
+  }
+}
+
 /// 全局主题配置
 class AppTheme {
   // 大厂跨平台标准中文字体回退链 (Apple -> Windows -> Android -> Web)
@@ -17,6 +32,16 @@ class AppTheme {
       primaryColor: AppColors.primary,
       scaffoldBackgroundColor: AppColors.background,
       fontFamilyFallback: _fontFamilyFallback,
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: _NoAnimationPageTransitionsBuilder(),
+          TargetPlatform.iOS: _NoAnimationPageTransitionsBuilder(),
+          TargetPlatform.macOS: _NoAnimationPageTransitionsBuilder(),
+          TargetPlatform.windows: _NoAnimationPageTransitionsBuilder(),
+          TargetPlatform.linux: _NoAnimationPageTransitionsBuilder(),
+          TargetPlatform.fuchsia: _NoAnimationPageTransitionsBuilder(),
+        },
+      ),
       textTheme: const TextTheme(
         headlineLarge: AppTypography.headlineLarge,
         headlineMedium: AppTypography.headlineMedium,
@@ -48,6 +73,16 @@ class AppTheme {
       primaryColor: AppColors.primary,
       scaffoldBackgroundColor: const Color(0xFF121212),
       fontFamilyFallback: _fontFamilyFallback,
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: _NoAnimationPageTransitionsBuilder(),
+          TargetPlatform.iOS: _NoAnimationPageTransitionsBuilder(),
+          TargetPlatform.macOS: _NoAnimationPageTransitionsBuilder(),
+          TargetPlatform.windows: _NoAnimationPageTransitionsBuilder(),
+          TargetPlatform.linux: _NoAnimationPageTransitionsBuilder(),
+          TargetPlatform.fuchsia: _NoAnimationPageTransitionsBuilder(),
+        },
+      ),
       textTheme: const TextTheme(
         headlineLarge: AppTypography.headlineLarge,
         headlineMedium: AppTypography.headlineMedium,

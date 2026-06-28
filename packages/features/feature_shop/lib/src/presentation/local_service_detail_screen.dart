@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:core_design_system/core_design_system.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'shop_feed_screen.dart'; // 获取 ProductModel
@@ -243,8 +243,7 @@ class _LocalServiceDetailScreenState extends State<LocalServiceDetailScreen> {
   }
 
   void _showMediaActionBottomSheet(int index) {
-    showModalBottomSheet(
-      context: context,
+    context.showInstantSheet<void>(
       backgroundColor: Colors.grey[900],
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),

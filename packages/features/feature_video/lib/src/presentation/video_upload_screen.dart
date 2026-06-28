@@ -1,5 +1,6 @@
-﻿import 'dart:io';
+import 'dart:io';
 import 'package:camera/camera.dart';
+import 'package:core_design_system/core_design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'video_editor_screen.dart'; // 我们下一步要创建的页面
@@ -112,11 +113,8 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
     // 强制使用 pushReplacement 或者延迟一点，避免与系统的相册 Picker 生命周期冲突
     Future.microtask(() {
       if (!mounted) return;
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => VideoEditorScreen(file: file),
-        ),
+      context.pushInstant<void>(
+        builder: (context) => VideoEditorScreen(file: file),
       );
     });
   }
@@ -193,8 +191,7 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
                       color: _isRecording ? Colors.red : Colors.transparent,
                     ),
                     child: Center(
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
+                      child: Container(
                         width: _isRecording ? 30 : 60,
                         height: _isRecording ? 30 : 60,
                         decoration: BoxDecoration(

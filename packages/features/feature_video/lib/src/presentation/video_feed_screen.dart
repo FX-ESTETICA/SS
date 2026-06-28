@@ -324,22 +324,12 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
                       if (e.scrollDelta.dy > 0 &&
                           _currentIndex < _videos.length - 1) {
                         _isPaging = true;
-                        _pageController
-                            .animateToPage(
-                              _currentIndex + 1,
-                              duration: const Duration(milliseconds: 300),
-                              curve: Curves.easeOutCubic,
-                            )
-                            .then((_) => _isPaging = false);
+                        _pageController.jumpToPage(_currentIndex + 1);
+                        _isPaging = false;
                       } else if (e.scrollDelta.dy < 0 && _currentIndex > 0) {
                         _isPaging = true;
-                        _pageController
-                            .animateToPage(
-                              _currentIndex - 1,
-                              duration: const Duration(milliseconds: 300),
-                              curve: Curves.easeOutCubic,
-                            )
-                            .then((_) => _isPaging = false);
+                        _pageController.jumpToPage(_currentIndex - 1);
+                        _isPaging = false;
                       } else if (e.scrollDelta.dy > 0 &&
                           _currentIndex == _videos.length - 1) {
                         // 如果用户手速极快，撞到了最后一帧（预加载没赶上），主动触发拉取并翻页尝试
@@ -385,11 +375,8 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       );
       return;
     }
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const VideoUploadScreen(),
-      ),
+    context.pushInstant<void>(
+      builder: (context) => const VideoUploadScreen(),
     );
   }
 
@@ -455,8 +442,10 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
                     imageUrl: widget.video.coverUrl,
                     fit: BoxFit.cover,
                     // 骨架屏占位：在封面还没加载出来时，用纯黑打底
-                    placeholder: (context, url) => Container(color: Colors.black),
-                    errorWidget: (context, url, error) => Container(color: Colors.black),
+                    placeholder: (context, url) =>
+                        Container(color: Colors.black),
+                    errorWidget: (context, url, error) =>
+                        Container(color: Colors.black),
                   )
                 : Container(color: Colors.black), // 如果没有封面，使用物理级黑场遮罩
           ),
@@ -468,16 +457,12 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
               child: SizedBox(
                 width: MediaQuery.of(context).size.width,
                 height: MediaQuery.of(context).size.height,
-                // 【核心优化】：使用 AnimatedOpacity 配合 playing 状态
-                // 只有当这一帧真正开始播放时，才让 C++ 的纹理层透出来。
-                // 这样彻底掩盖了底层播放器在 open 瞬间带来的前几毫秒“画面错乱/撕裂”问题。
                 child: StreamBuilder<bool>(
                   stream: player.stream.playing,
                   builder: (context, snapshot) {
                     final isPlaying = snapshot.data ?? false;
-                    return AnimatedOpacity(
+                    return Opacity(
                       opacity: isPlaying ? 1.0 : 0.0,
-                      duration: const Duration(milliseconds: 150),
                       child: Video(
                         controller: controller,
                         controls: NoVideoControls,
@@ -531,11 +516,20 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
             right: 8,
             child: Column(
               children: [
-                _buildActionIcon(Icons.favorite_border, _formatCount(widget.video.likeCount)),
+                _buildActionIcon(
+                  Icons.favorite_border,
+                  _formatCount(widget.video.likeCount),
+                ),
                 const SizedBox(height: 20),
-                _buildActionIcon(Icons.comment_outlined, _formatCount(widget.video.commentCount)),
+                _buildActionIcon(
+                  Icons.comment_outlined,
+                  _formatCount(widget.video.commentCount),
+                ),
                 const SizedBox(height: 20),
-                _buildActionIcon(Icons.share_outlined, _formatCount(widget.video.shareCount, fallback: '分享')),
+                _buildActionIcon(
+                  Icons.share_outlined,
+                  _formatCount(widget.video.shareCount, fallback: '分享'),
+                ),
                 const SizedBox(height: 20),
                 // 模拟旋转的光盘头像
                 Container(
@@ -558,11 +552,8 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
                       );
                       return;
                     }
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const VideoUploadScreen(),
-                      ),
+                    context.pushInstant<void>(
+                      builder: (context) => const VideoUploadScreen(),
                     );
                   },
                   child: Container(
@@ -624,52 +615,47 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
                     }
                     progress = progress.clamp(0.0, 1.0);
 
-                    // 使用 AnimatedOpacity 平滑过渡，吃掉 Tab 切换瞬间的几十毫秒状态抖动
-                    return AnimatedOpacity(
-                      opacity: shouldShow ? 1.0 : 0.0,
-                      duration: const Duration(milliseconds: 200),
-                      // 使用 IgnorePointer，确保在隐藏状态下绝对不可能发生误触
-                      child: IgnorePointer(
-                        ignoring: !shouldShow,
-                        child: SizedBox(
-                          height: 20, // 扩大 Slider 的触摸热区
-                          child: SliderTheme(
-                            data: SliderThemeData(
-                              trackHeight: 2,
-                              thumbShape: const RoundSliderThumbShape(
-                                enabledThumbRadius: 6,
-                              ),
-                              overlayShape: const RoundSliderOverlayShape(
-                                overlayRadius: 12,
-                              ),
-                              activeTrackColor: Colors.white,
-                              inactiveTrackColor:
-                                  Colors.white.withValues(alpha: 0.2),
-                              thumbColor: Colors.white,
-                            ),
-                            child: Slider(
-                              value: progress,
-                              onChangeStart: (value) {
-                                setState(() {
-                                  _isDragging = true;
-                                });
-                                player.pause(); // 拖拽开始时强制暂停
-                              },
-                              onChanged: (value) {
-                                final newPosition = Duration(
-                                  milliseconds:
-                                      (value * duration.inMilliseconds).toInt(),
-                                );
-                                player.seek(newPosition); // 实时预览画面帧
-                              },
-                              onChangeEnd: (value) {
-                                setState(() {
-                                  _isDragging = false;
-                                });
-                                player.play(); // 拖拽松手后恢复播放，进度条随后自动隐藏
-                              },
-                            ),
+                    if (!shouldShow) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return SizedBox(
+                      height: 20, // 扩大 Slider 的触摸热区
+                      child: SliderTheme(
+                        data: SliderThemeData(
+                          trackHeight: 2,
+                          thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 6,
                           ),
+                          overlayShape: const RoundSliderOverlayShape(
+                            overlayRadius: 12,
+                          ),
+                          activeTrackColor: Colors.white,
+                          inactiveTrackColor:
+                              Colors.white.withValues(alpha: 0.2),
+                          thumbColor: Colors.white,
+                        ),
+                        child: Slider(
+                          value: progress,
+                          onChangeStart: (value) {
+                            setState(() {
+                              _isDragging = true;
+                            });
+                            player.pause(); // 拖拽开始时强制暂停
+                          },
+                          onChanged: (value) {
+                            final newPosition = Duration(
+                              milliseconds:
+                                  (value * duration.inMilliseconds).toInt(),
+                            );
+                            player.seek(newPosition); // 实时预览画面帧
+                          },
+                          onChangeEnd: (value) {
+                            setState(() {
+                              _isDragging = false;
+                            });
+                            player.play(); // 拖拽松手后恢复播放，进度条随后自动隐藏
+                          },
                         ),
                       ),
                     );

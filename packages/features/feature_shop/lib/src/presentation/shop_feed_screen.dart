@@ -1011,25 +1011,14 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
   }
 
   void _navigateToDetail(ProductModel product) {
-    Navigator.push(
-      context,
-      PageRouteBuilder(
-        transitionDuration: const Duration(milliseconds: 500),
-        reverseTransitionDuration: const Duration(milliseconds: 400),
-        pageBuilder: (context, animation, secondaryAnimation) {
-          Widget page = _selectedMainCategoryIndex == 1
-              ? ProductDetailScreen(product: product)
-              : LocalServiceDetailScreen(
-                  product: product,
-                  isStore: _selectedMainCategoryIndex == 0,
-                );
-
-          return FadeTransition(
-            opacity: animation,
-            child: page,
+    final Widget page = _selectedMainCategoryIndex == 1
+        ? ProductDetailScreen(product: product)
+        : LocalServiceDetailScreen(
+            product: product,
+            isStore: _selectedMainCategoryIndex == 0,
           );
-        },
-      ),
+    context.pushInstant<void>(
+      builder: (context) => page,
     );
   }
 }

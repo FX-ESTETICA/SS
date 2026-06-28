@@ -105,17 +105,31 @@ class _ChatScreenState extends State<ChatScreen> {
   /// 2. 订阅 WebSocket (Realtime) 频道，实现秒发秒回
   void _subscribeToNewMessages() {
     if (_currentUserId.isEmpty) return;
-    _messageSubscription = SupabaseService.listenToMessages().listen((data) {
-      if (mounted) {
+    _messageSubscription = SupabaseService.listenToMessages().listen(
+      (data) {
+        if (mounted) {
+          setState(() {
+            _errorMessage = null;
+            _messages.clear();
+            _messages.addAll(
+              data
+                  .map((e) => MessageModel.fromJson(e, _currentUserId))
+                  .toList(),
+            );
+          });
+          _scrollToBottom();
+        }
+      },
+      onError: (_, __) async {
+        await _messageSubscription?.cancel();
+        _messageSubscription = null;
+        await _fetchHistoryMessages();
+        if (!mounted) return;
         setState(() {
-          _messages.clear();
-          _messages.addAll(
-            data.map((e) => MessageModel.fromJson(e, _currentUserId)).toList(),
-          );
+          _errorMessage = '实时消息通道暂不可用，已切换为历史消息模式';
         });
-        _scrollToBottom();
-      }
-    });
+      },
+    );
   }
 
   /// 3. 发送消息

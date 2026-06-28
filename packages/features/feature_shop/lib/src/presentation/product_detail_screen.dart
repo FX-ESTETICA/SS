@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:core_design_system/core_design_system.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'shop_feed_screen.dart'; // 引入 ProductModel
@@ -50,8 +50,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   void _showSkuBottomSheet() {
-    showModalBottomSheet(
-      context: context,
+    context.showInstantSheet<void>(
       backgroundColor: Colors.transparent, // 必须透明以显示沉浸式背景
       isScrollControlled: true,
       builder: (context) => const _SkuBottomSheet(),
@@ -475,8 +474,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   void _showMediaActionBottomSheet(int index) {
-    showModalBottomSheet(
-      context: context,
+    context.showInstantSheet<void>(
       backgroundColor: Colors.grey[900],
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),

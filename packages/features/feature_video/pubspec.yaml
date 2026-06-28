@@ -24,6 +24,7 @@ dependencies:
   cached_network_image: ^3.4.1
   dio: ^5.9.2
   path_provider: ^2.1.5
+  flutter_riverpod: ^3.3.2
   
   # 顶级 C++ 内核视频播放器 (降维打击抖音底层)
   media_kit: ^1.1.10

@@ -21,12 +21,33 @@ export default {
   async fetch(request, env) {
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'PUT, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS',
       'Access-Control-Allow-Headers': 'Authorization, Content-Type',
     };
+    const url = new URL(request.url);
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders });
+    }
+
+    if (request.method === 'GET' && url.pathname.startsWith('/objects/')) {
+      const objectKey = decodeURIComponent(url.pathname.replace('/objects/', ''));
+      if (!objectKey) {
+        return new Response('Missing object key', { status: 400, headers: corsHeaders });
+      }
+
+      const object = await env.MEDIA_BUCKET.get(objectKey);
+      if (!object) {
+        return new Response('Object not found', { status: 404, headers: corsHeaders });
+      }
+
+      const headers = new Headers(corsHeaders);
+      object.writeHttpMetadata(headers);
+      headers.set('etag', object.httpEtag);
+
+      return new Response(object.body, {
+        headers,
+      });
     }
 
     if (request.method !== 'PUT') {
@@ -55,7 +76,6 @@ export default {
     const user = await authResponse.json();
     const ownerId = user.id;
 
-    const url = new URL(request.url);
     const filename = url.searchParams.get('filename');
     const mediaKind = url.searchParams.get('kind');
     if (!filename || !mediaKind) {
@@ -125,7 +145,7 @@ export default {
         ownerId,
         mediaKind,
         objectKey,
-        publicUrl: `${env.PUBLIC_R2_BASE_URL}/${objectKey}`,
+        publicUrl: `${env.PUBLIC_MEDIA_BASE_URL}/${objectKey}`,
         contentType,
         bytes: contentLength,
         checksumSha256,

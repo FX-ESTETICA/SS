@@ -1,11 +1,16 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:core_network/core_network.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 const String kDefaultProfileAvatarUrl =
     'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80';
 
-String resolveCurrentUserAvatarUrl() {
+String resolveCurrentUserAvatarUrl({String? sharedAvatarUrl}) {
+  if (sharedAvatarUrl != null && sharedAvatarUrl.trim().isNotEmpty) {
+    return sharedAvatarUrl.trim();
+  }
+
   final metadata = SupabaseService.currentUser?.userMetadata ?? {};
   final rawAvatarUrl = metadata['avatar_url'];
   if (rawAvatarUrl is String && rawAvatarUrl.trim().isNotEmpty) {
@@ -14,7 +19,7 @@ String resolveCurrentUserAvatarUrl() {
   return kDefaultProfileAvatarUrl;
 }
 
-class CurrentUserAvatar extends StatelessWidget {
+class CurrentUserAvatar extends ConsumerWidget {
   final double size;
   final VoidCallback? onTap;
   final IconData fallbackIcon;
@@ -35,7 +40,9 @@ class CurrentUserAvatar extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final identityHub = ref.watch(identityControllerProvider).asData?.value;
+    final sharedAvatarUrl = identityHub?.profile.avatarUrl;
     final avatar = SizedBox(
       width: size,
       height: size,
@@ -43,7 +50,9 @@ class CurrentUserAvatar extends StatelessWidget {
         stream: SupabaseService.client.auth.onAuthStateChange,
         builder: (context, snapshot) {
           final isLoggedIn = SupabaseService.currentSession != null;
-          final avatarUrl = isLoggedIn ? resolveCurrentUserAvatarUrl() : null;
+          final avatarUrl = isLoggedIn
+              ? resolveCurrentUserAvatarUrl(sharedAvatarUrl: sharedAvatarUrl)
+              : null;
 
           return DecoratedBox(
             decoration: BoxDecoration(

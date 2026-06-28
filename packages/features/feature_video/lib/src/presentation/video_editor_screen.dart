@@ -3,20 +3,21 @@ import 'package:flutter/material.dart';
 import 'package:video_editor/video_editor.dart';
 import 'package:core_media/core_media.dart'; // 引入我们刚才写的底层处理引擎
 import 'package:video_player_win/video_player_win.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:core_network/core_network.dart';
 
 /// 15秒时间轴截取与转码编辑器
-class VideoEditorScreen extends StatefulWidget {
+class VideoEditorScreen extends ConsumerStatefulWidget {
   final File file;
 
   const VideoEditorScreen({super.key, required this.file});
 
   @override
-  State<VideoEditorScreen> createState() => _VideoEditorScreenState();
+  ConsumerState<VideoEditorScreen> createState() => _VideoEditorScreenState();
 }
 
-class _VideoEditorScreenState extends State<VideoEditorScreen> {
+class _VideoEditorScreenState extends ConsumerState<VideoEditorScreen> {
   late final VideoEditorController _controller;
   bool _isExporting = false;
   String _exportStatus = '';
@@ -75,6 +76,16 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
       final user = SupabaseService.currentUser;
       if (session == null || user == null) {
         throw Exception('请先登录后再上传和发布视频');
+      }
+
+      IdentityHub? identityHub =
+          ref.read(identityControllerProvider).asData?.value;
+      if (identityHub == null) {
+        await ref.read(identityControllerProvider.notifier).refresh();
+        identityHub = ref.read(identityControllerProvider).asData?.value;
+      }
+      if (identityHub == null) {
+        throw Exception('身份系统尚未准备完成，请稍后重试');
       }
 
       // 1. 获取用户在时间轴上截取的起止时间 (秒)
@@ -138,15 +149,17 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
           _exportStatus = '上传完成，正在发布动态...';
         });
 
-        final authorName = user.userMetadata?['display_name'] as String? ??
-            user.email?.split('@').first ??
-            '匿名用户';
+        final activeIdentity = identityHub.activeIdentity;
+        final authorName = activeIdentity.displayName.trim().isNotEmpty
+            ? activeIdentity.displayName
+            : (user.email?.split('@').first ?? '匿名用户');
 
         await SupabaseService.publishVideo(
           videoUpload: videoUpload,
           coverUpload: coverUpload,
           description: '刚刚通过智选超级 APP 极限压缩上传了这条视频！🚀',
           authorId: user.id,
+          authorIdentityId: activeIdentity.id,
           authorName: authorName,
           durationSeconds: duration <= 0 ? 1 : duration,
         );
