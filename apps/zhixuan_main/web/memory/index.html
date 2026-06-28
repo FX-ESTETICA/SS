@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>智选项目记忆桥接台</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <p class="eyebrow">Project Memory Bridge</p>
+      <h1>跨窗口读取记忆控制台</h1>
+      <p class="subtitle">仅当新窗口的唯一初始输入精确等于“读取记忆”时，触发项目记忆调取与跨窗口同步。</p>
+    </section>
+
+    <section class="panel">
+      <h2>窗口调度</h2>
+      <div class="field">
+        <label for="initial-input">新窗口初始输入</label>
+        <input id="initial-input" type="text" value="读取记忆" autocomplete="off">
+      </div>
+      <div class="actions">
+        <button id="open-window-button" type="button">打开新窗口并注入初始输入</button>
+        <button id="read-local-button" type="button">当前窗口直接尝试读取记忆</button>
+      </div>
+      <div class="status-grid">
+        <div class="status-card">
+          <span class="status-label">当前窗口 ID</span>
+          <strong id="window-id">-</strong>
+        </div>
+        <div class="status-card">
+          <span class="status-label">当前请求 ID</span>
+          <strong id="request-id">-</strong>
+        </div>
+        <div class="status-card">
+          <span class="status-label">初始输入</span>
+          <strong id="initial-command">-</strong>
+        </div>
+        <div class="status-card">
+          <span class="status-label">匹配结果</span>
+          <strong id="match-status">未触发</strong>
+        </div>
+      </div>
+      <p id="bridge-status" class="bridge-status">等待窗口事件...</p>
+    </section>
+
+    <section class="panel">
+      <h2>项目记忆摘要</h2>
+      <div id="snapshot-summary" class="summary-grid"></div>
+      <details id="snapshot-details" class="details-panel">
+        <summary>查看完整记忆快照</summary>
+        <pre id="snapshot-raw" class="snapshot-raw">尚未加载项目记忆。</pre>
+      </details>
+    </section>
+
+    <section class="panel">
+      <h2>通信日志</h2>
+      <ul id="event-log" class="event-log"></ul>
+    </section>
+  </main>
+
+  <script type="module" src="./memory-bridge.js"></script>
+</body>
+</html>

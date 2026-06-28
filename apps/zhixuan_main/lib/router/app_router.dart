@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 
 import 'package:feature_shop/feature_shop.dart';
+import '../memory_bridge/memory_bridge_entry_screen.dart';
 import '../main.dart';
 
 // @AI_CONTEXT: [2026-06-26] 引入 go_router 进行物理路由解耦。
@@ -35,6 +36,10 @@ final GoRouter appRouter = GoRouter(
           isMerchantMode: false,
         );
       },
+    ),
+    GoRoute(
+      path: '/memory-bridge',
+      builder: (context, state) => const MemoryBridgeEntryScreen(),
     ),
   ],
 );

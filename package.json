@@ -1,6 +1,18 @@
 {
+  "name": "zhixuan-tooling",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "memory:snapshot": "node scripts/generate_project_memory_snapshot.mjs",
+    "memory:serve": "node scripts/serve_memory_web.mjs",
+    "memory:test": "playwright test",
+    "memory:test:headed": "playwright test --headed"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
     "pg": "^8.22.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.2"
   }
 }

@@ -9,3 +9,5 @@ build/
 node_modules/
 .wrangler/
 supabase/.temp/
+playwright-report/
+test-results/

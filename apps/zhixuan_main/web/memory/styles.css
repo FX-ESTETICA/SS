@@ -1,0 +1,172 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #050505;
+  color: #ffffff;
+}
+
+.shell {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 24px 80px;
+}
+
+.hero {
+  margin-bottom: 32px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.hero h1 {
+  margin: 0 0 12px;
+  font-size: 40px;
+  font-weight: 600;
+}
+
+.subtitle {
+  margin: 0;
+  max-width: 720px;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.panel {
+  margin-top: 24px;
+  padding: 24px;
+  border: 1px solid #ffffff;
+  border-radius: 24px;
+  background: #0b0b0b;
+}
+
+.panel h2 {
+  margin: 0 0 20px;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field label {
+  font-size: 14px;
+}
+
+.field input {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid #ffffff;
+  border-radius: 16px;
+  background: #050505;
+  color: #ffffff;
+  font-size: 16px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.actions button {
+  padding: 14px 18px;
+  border: none;
+  border-radius: 16px;
+  background: #ffffff;
+  color: #000000;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.status-grid,
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.status-card,
+.summary-card {
+  padding: 16px;
+  border-radius: 18px;
+  background: #111111;
+  border: 1px solid #ffffff;
+}
+
+.status-label,
+.summary-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.bridge-status {
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+.details-panel {
+  margin-top: 20px;
+}
+
+.details-panel summary {
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.snapshot-raw {
+  overflow: auto;
+  margin-top: 12px;
+  padding: 16px;
+  border-radius: 16px;
+  background: #030303;
+  border: 1px solid #ffffff;
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.event-log {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.event-log li {
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid #ffffff;
+  background: #111111;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+  .shell {
+    padding: 24px 16px 48px;
+  }
+
+  .hero h1 {
+    font-size: 28px;
+  }
+}

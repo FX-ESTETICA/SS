@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+set -e
+
+node scripts/generate_project_memory_snapshot.mjs
+git add apps/zhixuan_main/web/memory/project-memory-snapshot.enc.json

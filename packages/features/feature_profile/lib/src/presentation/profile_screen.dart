@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:core_design_system/core_design_system.dart';
 import 'package:core_media/core_media.dart';
@@ -812,6 +813,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   const Divider(color: Colors.white10, height: 32),
                   _buildSettingsItem('账号安全', Icons.security),
                   _buildSettingsItem('更改邮箱', Icons.email_outlined),
+                  _buildSettingsItem('项目记忆桥接', Icons.memory_outlined),
                   const Spacer(),
                   const Divider(color: Colors.white10, height: 32),
                   _buildSettingsItem(
@@ -910,6 +912,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       title: Text(title, style: TextStyle(color: color, fontSize: 16)),
       onTap: () async {
         Navigator.pop(context);
+        if (title == '项目记忆桥接') {
+          if (!mounted) return;
+          context.push('/memory-bridge');
+          return;
+        }
         // 如果是退出，调用真实的退出逻辑
         if (title == '退出账号') {
           // @AI_CONTEXT: [2026-06-26] 使用 fpdart 的 fold 来处理退出登录的返回结果
