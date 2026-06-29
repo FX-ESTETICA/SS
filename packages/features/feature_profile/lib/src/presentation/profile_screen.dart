@@ -185,8 +185,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   late final PageController _themePageController;
   Timer? _autoScrollTimer;
   bool _isLoggingIn = false;
-  List<Map<String, dynamic>> _myVideos = [];
-  final Map<String, List<Map<String, dynamic>>> _videosByIdentity = {};
+  List<PlatformVideoRecord> _myVideos = [];
+  final Map<String, List<PlatformVideoRecord>> _videosByIdentity = {};
   bool _isLoadingVideos = false;
   String? _lastFetchedIdentityId;
   String? _scheduledIdentityFetchId;
@@ -225,7 +225,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   void _showCachedVideosForIdentity(String authorIdentityId) {
     setState(() {
       _lastFetchedIdentityId = authorIdentityId;
-      _myVideos = List<Map<String, dynamic>>.from(
+      _myVideos = List<PlatformVideoRecord>.from(
         _videosByIdentity[authorIdentityId] ?? const [],
       );
       _isLoadingVideos = !_videosByIdentity.containsKey(authorIdentityId);
@@ -673,20 +673,48 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       final fileName =
           'avatar_${user.id}_${DateTime.now().millisecondsSinceEpoch}.webp';
       final fileBytes = await compressedFile.readAsBytes();
+      final avatarChecksum = SupabaseService.computeSha256Hex(fileBytes);
       final session = SupabaseService.client.auth.currentSession;
       if (session == null) return;
 
-      final avatarUpload = await SupabaseService.uploadMedia(
-        fileName: fileName,
-        fileBytes: fileBytes,
-        mediaKind: 'cover',
-        accessToken: session.accessToken,
-        contentType: 'image/webp',
+      final reusableAvatar = await SupabaseService.findReusableUploadedMedia(
+        mediaKind: 'avatar',
+        checksumSha256: avatarChecksum,
       );
+      final avatarUpload =
+          reusableAvatar ??
+          await (() async {
+            final avatarUploadSession =
+                await SupabaseService.issueUploadSession(
+                  mediaKind: 'avatar',
+                  sourceFilename: fileName,
+                  contentType: 'image/webp',
+                  fileSizeBytes: fileBytes.length,
+                  idempotencyKey: 'avatar_${user.id}_$avatarChecksum',
+                  preferredObjectPrefix: 'avatar_${user.id}',
+                  uploadPurpose: 'shared_avatar',
+                  checksumSha256: avatarChecksum,
+                  uploadMetadata: {
+                    'surface': 'profile',
+                  },
+                );
+            return SupabaseService.uploadMedia(
+              fileName: fileName,
+              fileBytes: fileBytes,
+              mediaKind: 'avatar',
+              accessToken: session.accessToken,
+              contentType: 'image/webp',
+              objectPrefix: avatarUploadSession.objectPrefix,
+              uploadSessionId: avatarUploadSession.id,
+            );
+          })();
 
       await ref
           .read(identityControllerProvider.notifier)
           .updateSharedAvatar(avatarUpload.publicUrl);
+      await SupabaseService.consumeUploadSessions([
+        avatarUpload.uploadSessionId,
+      ]);
 
       if (mounted) setState(() {});
     } catch (e) {
@@ -895,6 +923,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     ),
                   ),
                 ),
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  child: _buildVideoMetaBadge(video.statusLabel),
+                ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: _buildVideoMetaBadge(video.primaryDistributionLabel),
+                ),
                 // 底部信息遮罩
                 Positioned(
                   left: 0,
@@ -916,15 +954,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 ),
                 // 描述信息
                 Positioned(
-                  bottom: 8,
+                  bottom: 28,
                   left: 8,
                   right: 8,
                   child: Text(
-                    video['description'] ?? '',
+                    video.description,
                     style: const TextStyle(color: Colors.white, fontSize: 12),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
+                ),
+                Positioned(
+                  left: 8,
+                  bottom: 8,
+                  child: _buildVideoMetaBadge(video.distributionChannelLabel),
                 ),
               ],
             ),
@@ -944,6 +987,24 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     setState(() {
       _isSettingsOpen = false;
     });
+  }
+
+  Widget _buildVideoMetaBadge(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white, width: 1),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
   }
 
   Widget _buildSettingsDrawerOverlay() {

@@ -7,11 +7,35 @@ import 'package:media_kit_video/media_kit_video.dart';
 import '../domain/video_engine_pool.dart'; // 引入底层引擎池
 import 'video_upload_screen.dart'; // 引入上传页面
 
-import 'package:cached_network_image/cached_network_image.dart';
+enum VideoFeedMode {
+  portrait(
+    tabLabel: '推荐',
+    distributionChannel: 'recommendation',
+    contentOrientation: 'portrait',
+  ),
+  landscape(
+    tabLabel: '横屏',
+    distributionChannel: 'landscape',
+    contentOrientation: 'landscape',
+  );
+
+  const VideoFeedMode({
+    required this.tabLabel,
+    required this.distributionChannel,
+    required this.contentOrientation,
+  });
+
+  final String tabLabel;
+  final String distributionChannel;
+  final String contentOrientation;
+}
 
 /// 商业级短视频数据模型 (结合了封面、计数器等冗余字段)
 class VideoModel {
   final String url;
+  final String primaryPlaybackUrl;
+  final String? fallbackPlaybackUrl;
+  final bool prefersStreaming;
   final String coverUrl; // 独立的封面链接
   final String authorName;
   final String description;
@@ -19,9 +43,18 @@ class VideoModel {
   final int likeCount;
   final int commentCount;
   final int shareCount;
+  final int? width;
+  final int? height;
+  final String contentOrientation;
+  final String distributionChannelLabel;
+  final String primaryDistributionLabel;
+  final String statusLabel;
 
   VideoModel({
     required this.url,
+    required this.primaryPlaybackUrl,
+    this.fallbackPlaybackUrl,
+    this.prefersStreaming = false,
     required this.coverUrl,
     required this.authorName,
     required this.description,
@@ -29,22 +62,43 @@ class VideoModel {
     this.likeCount = 0,
     this.commentCount = 0,
     this.shareCount = 0,
+    this.width,
+    this.height,
+    this.contentOrientation = 'portrait',
+    this.distributionChannelLabel = '推荐',
+    this.primaryDistributionLabel = 'MP4直出',
+    this.statusLabel = '已发布',
   });
 
-  // 从云端 JSON 数据解析的工厂方法
-  factory VideoModel.fromJson(Map<String, dynamic> json) {
+  bool get isLandscape => contentOrientation == 'landscape';
+  String get playbackSourceKey => prefersStreaming
+      ? '$primaryPlaybackUrl|${fallbackPlaybackUrl ?? ''}'
+      : primaryPlaybackUrl;
+  VideoPlaybackSource get playbackSource => VideoPlaybackSource(
+        primaryUrl: primaryPlaybackUrl,
+        fallbackUrl: fallbackPlaybackUrl,
+        prefersStreaming: prefersStreaming,
+      );
+
+  factory VideoModel.fromRecord(PlatformVideoRecord record) {
     return VideoModel(
-      url: json['video_url'] ?? '',
-      coverUrl: json['cover_url'] ?? '',
-      // 注意：目前由于 UI 层还是写死的作者名逻辑，如果关联了 auth.users，
-      // 顶级架构会通过 JOIN 把 users.raw_user_meta_data->>'full_name' 带出来。
-      // 这里为了兼容过渡期，先从表里直接拿或者默认
-      authorName: json['author_name'] ?? json['authorName'] ?? '@匿名用户',
-      description: json['description'] ?? '',
-      viewCount: json['view_count'] ?? 0,
-      likeCount: json['like_count'] ?? 0,
-      commentCount: json['comment_count'] ?? 0,
-      shareCount: json['share_count'] ?? 0,
+      url: record.primaryPlaybackUrl,
+      primaryPlaybackUrl: record.primaryPlaybackUrl,
+      fallbackPlaybackUrl: record.fallbackPlaybackUrl,
+      prefersStreaming: record.prefersStreaming,
+      coverUrl: record.coverUrl,
+      authorName: record.authorName,
+      description: record.description,
+      viewCount: record.viewCount,
+      likeCount: record.likeCount,
+      commentCount: record.commentCount,
+      shareCount: record.shareCount,
+      width: record.width,
+      height: record.height,
+      contentOrientation: record.contentOrientation,
+      distributionChannelLabel: record.distributionChannelLabel,
+      primaryDistributionLabel: record.primaryDistributionLabel,
+      statusLabel: record.statusLabel,
     );
   }
 }
@@ -60,12 +114,30 @@ class VideoFeedScreen extends StatefulWidget {
 
 class _VideoFeedScreenState extends State<VideoFeedScreen> {
   late PageController _pageController;
-  final List<VideoModel> _videos = [];
+  final Map<VideoFeedMode, List<VideoModel>> _videosByMode = {
+    VideoFeedMode.portrait: [],
+    VideoFeedMode.landscape: [],
+  };
+  final Map<VideoFeedMode, int> _currentIndexByMode = {
+    VideoFeedMode.portrait: 0,
+    VideoFeedMode.landscape: 0,
+  };
+  final Map<VideoFeedMode, String?> _errorMessageByMode = {
+    VideoFeedMode.portrait: null,
+    VideoFeedMode.landscape: null,
+  };
+  final Map<VideoFeedMode, bool> _loadedByMode = {
+    VideoFeedMode.portrait: false,
+    VideoFeedMode.landscape: false,
+  };
+  final Set<VideoFeedMode> _fetchingModes = <VideoFeedMode>{};
+  VideoFeedMode _currentFeedMode = VideoFeedMode.portrait;
   bool _isLoading = true;
-  String? _errorMessage;
-  int _currentIndex = 0;
   bool _isPaging = false; // 翻页状态锁
-  bool _isFetching = false; // 网络请求锁
+
+  List<VideoModel> get _videos => _videosByMode[_currentFeedMode]!;
+  String? get _errorMessage => _errorMessageByMode[_currentFeedMode];
+  int get _currentIndex => _currentIndexByMode[_currentFeedMode]!;
 
   @override
   void initState() {
@@ -77,72 +149,73 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     _fetchVideos();
   }
 
-  Future<void> _fetchVideos({bool isLoadMore = false}) async {
-    if (_isFetching) return;
-    _isFetching = true;
+  Future<void> _fetchVideos({
+    bool isLoadMore = false,
+    VideoFeedMode? mode,
+  }) async {
+    final targetMode = mode ?? _currentFeedMode;
+    if (_fetchingModes.contains(targetMode)) return;
+    _fetchingModes.add(targetMode);
 
     try {
-      final offset = isLoadMore ? _videos.length : 0;
-      final data = await SupabaseService.fetchVideos(offset: offset, limit: 10);
+      if (!isLoadMore && mounted && targetMode == _currentFeedMode) {
+        setState(() {
+          _isLoading = true;
+          _errorMessageByMode[targetMode] = null;
+        });
+      }
+
+      final existingVideos = _videosByMode[targetMode]!;
+      final offset = isLoadMore ? existingVideos.length : 0;
+      final data = await SupabaseService.fetchVideos(
+        offset: offset,
+        limit: 10,
+        distributionChannel: targetMode.distributionChannel,
+      );
 
       if (mounted) {
         setState(() {
+          final currentList = _videosByMode[targetMode]!;
+          if (!isLoadMore) {
+            currentList.clear();
+          }
           if (data.isNotEmpty) {
-            // 将新数据转换为模型，并进行打乱（模拟推荐系统的千人千面）
-            final newVideos = data.map((e) => VideoModel.fromJson(e)).toList();
+            final newVideos = data.map(VideoModel.fromRecord).toList();
             newVideos.shuffle(); // 纯前端打乱模拟个性化分发
-            _videos.addAll(newVideos);
-          } else if (isLoadMore && _videos.isNotEmpty) {
+            currentList.addAll(newVideos);
+          } else if (isLoadMore && currentList.isNotEmpty) {
             // 【终极无底洞策略】：如果云端真的没有更多数据了，我们从已有列表中随机抽取打乱并追加
             // 永远不让用户看到“到底了”，保持心流不被打断
-            final loopVideos = List<VideoModel>.from(_videos);
+            final loopVideos = List<VideoModel>.from(currentList);
             loopVideos.shuffle();
-            _videos.addAll(loopVideos.take(10));
+            currentList.addAll(loopVideos.take(10));
           }
-          _isLoading = false;
+          _loadedByMode[targetMode] = true;
+          if (targetMode == _currentFeedMode) {
+            _isLoading = false;
+          }
         });
 
-        // 数据到达后，将焦点锁定到当前索引，开始底层预加载
-        if (!isLoadMore) {
-          VideoEnginePool.instance
-              .focusIndex(0, _videos.map((e) => e.url).toList());
-        } else {
-          // 如果是追加数据，通知引擎池更新 URL 列表，但不改变当前播放焦点
-          VideoEnginePool.instance
-              .focusIndex(_currentIndex, _videos.map((e) => e.url).toList());
+        if (targetMode == _currentFeedMode) {
+          _syncFocusForCurrentFeed(resetToFirst: !isLoadMore);
         }
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          if (!isLoadMore) {
-            _errorMessage = '云端连接失败，已切换至离线缓存模式';
-            _videos.addAll([
-              VideoModel(
-                url:
-                    'https://flutter.github.io/assets-for-api-docs/assets/videos/butterfly.mp4',
-                coverUrl:
-                    'https://flutter.github.io/assets-for-api-docs/assets/videos/butterfly.jpg',
-                authorName: '@智选官方 (离线)',
-                description: '极致丝滑！智选超级 APP 首次点火测试 🔥 #Flutter #Tech',
-              ),
-              VideoModel(
-                url:
-                    'https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4',
-                coverUrl:
-                    'https://flutter.github.io/assets-for-api-docs/assets/videos/bee.jpg',
-                authorName: '@自然探索 (离线)',
-                description: '大自然的美丽瞬间 🌸',
-              ),
-            ]);
+          if (!isLoadMore && targetMode == _currentFeedMode) {
+            _errorMessageByMode[targetMode] = '云端连接失败，请稍后重试';
+            _videosByMode[targetMode]!.clear();
             _isLoading = false;
-            VideoEnginePool.instance
-                .focusIndex(0, _videos.map((e) => e.url).toList());
+            _loadedByMode[targetMode] = true;
           }
         });
+        if (targetMode == _currentFeedMode) {
+          _syncFocusForCurrentFeed(resetToFirst: true);
+        }
       }
     } finally {
-      _isFetching = false;
+      _fetchingModes.remove(targetMode);
     }
   }
 
@@ -153,14 +226,60 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     // 如果 Tab 切换导致非激活，强制暂停视频并冻结所有 C++ 解码
     if (oldWidget.isTabActive != widget.isTabActive) {
       if (widget.isTabActive) {
-        // Tab 激活：恢复焦点视频播放并重新准备缓存池
-        VideoEnginePool.instance
-            .focusIndex(_currentIndex, _videos.map((e) => e.url).toList());
+        _syncFocusForCurrentFeed();
       } else {
         // Tab 离开：静默冻结所有视频，实现物理隔离，解决跨 Tab 依然有声音的问题
         VideoEnginePool.instance.freezeAll();
       }
     }
+  }
+
+  void _syncFocusForCurrentFeed({bool resetToFirst = false}) {
+    if (!widget.isTabActive) {
+      VideoEnginePool.instance.freezeAll();
+      return;
+    }
+
+    final videos = _videosByMode[_currentFeedMode]!;
+    if (videos.isEmpty) {
+      VideoEnginePool.instance.freezeAll();
+      return;
+    }
+
+    final safeIndex = resetToFirst
+        ? 0
+        : _currentIndexByMode[_currentFeedMode]!.clamp(0, videos.length - 1);
+    _currentIndexByMode[_currentFeedMode] = safeIndex;
+    VideoEnginePool.instance.focusIndex(
+      safeIndex,
+      videos.map((video) => video.playbackSource).toList(),
+    );
+  }
+
+  void _replacePageController(int initialPage) {
+    final previous = _pageController;
+    _pageController = PageController(initialPage: initialPage);
+    previous.dispose();
+  }
+
+  void _switchFeedMode(VideoFeedMode mode) {
+    if (_currentFeedMode == mode) {
+      return;
+    }
+
+    final initialPage = _currentIndexByMode[mode]!;
+    setState(() {
+      _currentFeedMode = mode;
+      _isPaging = false;
+      _isLoading = !_loadedByMode[mode]!;
+    });
+    _replacePageController(initialPage);
+
+    if (_loadedByMode[mode]!) {
+      _syncFocusForCurrentFeed();
+      return;
+    }
+    unawaited(_fetchVideos(mode: mode));
   }
 
   @override
@@ -182,13 +301,45 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   }
 
   Widget _buildBody() {
+    return Stack(
+      children: [
+        Positioned.fill(child: _buildContentLayer()),
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: _buildFeedSwitcher(),
+            ),
+          ),
+        ),
+        if (_errorMessage != null)
+          Positioned(
+            top: 86,
+            left: 0,
+            right: 0,
+            child: Container(
+              color: AppColors.error.withValues(alpha: 0.8),
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                _errorMessage!,
+                textAlign: TextAlign.center,
+                style: AppTypography.labelLarge.copyWith(color: Colors.white),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildContentLayer() {
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: Colors.white),
       );
     }
 
-    if (_errorMessage != null) {
+    if (_errorMessage != null && _videos.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -196,11 +347,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
             Text(_errorMessage!, style: const TextStyle(color: Colors.white)),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: () {
-                setState(() => _isLoading = true);
-                _videos.clear();
-                _fetchVideos();
-              },
+              onPressed: () => _fetchVideos(mode: _currentFeedMode),
               style:
                   ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
               child: const Text(
@@ -214,24 +361,30 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     }
 
     if (_videos.isEmpty) {
+      final title = _currentFeedMode == VideoFeedMode.portrait
+          ? '暂无竖屏视频'
+          : '暂无横屏视频';
+      final subtitle = _currentFeedMode == VideoFeedMode.portrait
+          ? '数据库还是空的，先上传第一条视频吧'
+          : '横屏专区还没有内容，先上传一条横屏视频吧';
       return Stack(
         children: [
           Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Text(
-                  '暂无视频内容',
-                  style: TextStyle(
+                Text(
+                  title,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 24,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text(
-                  '数据库还是空的，先上传第一条视频吧',
-                  style: TextStyle(
+                Text(
+                  subtitle,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 15,
                     fontWeight: FontWeight.w400,
@@ -269,102 +422,106 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       );
     }
 
-    return Stack(
-      children: [
-        // 核心降维打击：使用 PageView.builder 实现极致复用的全屏滚动
-        RefreshIndicator(
-          onRefresh: () async {
-            setState(() => _isLoading = true);
-            _videos.clear();
-            await _fetchVideos();
-          },
-          child: PageView.builder(
-            controller: _pageController,
-            scrollDirection: Axis.vertical, // 上下滑动
-            physics:
-                const NeverScrollableScrollPhysics(), // 【绝对拦截】：完全禁用系统默认滚动，一切交由代码控制
-            itemCount: _videos.length,
-            onPageChanged: (index) {
-              setState(() {
-                _currentIndex = index;
-              });
+    return RefreshIndicator(
+      onRefresh: () => _fetchVideos(mode: _currentFeedMode),
+      child: PageView.builder(
+        controller: _pageController,
+        scrollDirection: Axis.vertical,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: _videos.length,
+        onPageChanged: (index) {
+          setState(() {
+            _currentIndexByMode[_currentFeedMode] = index;
+          });
 
-              // 【无感预加载】：当用户滑动到倒数第 3 个视频时，静默拉取下一页
-              if (_currentIndex >= _videos.length - 3) {
-                _fetchVideos(isLoadMore: true);
-              }
+          if (index >= _videos.length - 3) {
+            _fetchVideos(isLoadMore: true, mode: _currentFeedMode);
+          }
 
-              // 将滑动焦点事件抛给底层 C++ 引擎池进行物理指针偏移
-              if (widget.isTabActive) {
-                VideoEnginePool.instance
-                    .focusIndex(index, _videos.map((e) => e.url).toList());
+          if (widget.isTabActive) {
+            VideoEnginePool.instance.focusIndex(
+              index,
+              _videos.map((video) => video.playbackSource).toList(),
+            );
+          }
+        },
+        itemBuilder: (context, index) {
+          final bool isRendered =
+              (index >= _currentIndex - 1 && index <= _currentIndex + 1);
+          if (!isRendered) {
+            return const SizedBox();
+          }
+
+          return Listener(
+            onPointerSignal: (pointerSignal) {
+              if (pointerSignal is PointerScrollEvent) {
+                GestureBinding.instance.pointerSignalResolver.register(
+                  pointerSignal,
+                  (PointerSignalEvent event) {
+                    final e = event as PointerScrollEvent;
+
+                    if (_isPaging) return;
+
+                    if (e.scrollDelta.dy > 0 && _currentIndex < _videos.length - 1) {
+                      _isPaging = true;
+                      _pageController.jumpToPage(_currentIndex + 1);
+                      _isPaging = false;
+                    } else if (e.scrollDelta.dy < 0 && _currentIndex > 0) {
+                      _isPaging = true;
+                      _pageController.jumpToPage(_currentIndex - 1);
+                      _isPaging = false;
+                    } else if (e.scrollDelta.dy > 0 &&
+                        _currentIndex == _videos.length - 1) {
+                      _fetchVideos(isLoadMore: true, mode: _currentFeedMode);
+                    }
+                  },
+                );
               }
             },
-            itemBuilder: (context, index) {
-              // 极限预加载：只渲染当前和前后 1 个
-              final bool isRendered =
-                  (index >= _currentIndex - 1 && index <= _currentIndex + 1);
-              if (!isRendered) {
-                return const SizedBox();
-              }
+            child: _VideoPlayerItem(
+              video: _videos[index],
+              index: index,
+              isActive: index == _currentIndex && widget.isTabActive,
+            ),
+          );
+        },
+      ),
+    );
+  }
 
-              return Listener(
-                onPointerSignal: (pointerSignal) {
-                  if (pointerSignal is PointerScrollEvent) {
-                    // 【终极降维打击】：必须将 Listener 放在 PageView 内部！
-                    // 强制接管滚轮事件，让它永远不被原生 Scrollable 捕获！
-                    GestureBinding.instance.pointerSignalResolver
-                        .register(pointerSignal, (PointerSignalEvent event) {
-                      final e = event as PointerScrollEvent;
-
-                      // 【唯一的锁】：只要正在翻页动画中，任何滚轮事件全部静默吃掉
-                      if (_isPaging) return;
-
-                      // 只要收到了明确的上下滚动指令，立刻触发翻页并上锁
-                      if (e.scrollDelta.dy > 0 &&
-                          _currentIndex < _videos.length - 1) {
-                        _isPaging = true;
-                        _pageController.jumpToPage(_currentIndex + 1);
-                        _isPaging = false;
-                      } else if (e.scrollDelta.dy < 0 && _currentIndex > 0) {
-                        _isPaging = true;
-                        _pageController.jumpToPage(_currentIndex - 1);
-                        _isPaging = false;
-                      } else if (e.scrollDelta.dy > 0 &&
-                          _currentIndex == _videos.length - 1) {
-                        // 如果用户手速极快，撞到了最后一帧（预加载没赶上），主动触发拉取并翻页尝试
-                        _fetchVideos(isLoadMore: true);
-                      }
-                    });
-                  }
-                },
-                child: _VideoPlayerItem(
-                  video: _videos[index],
-                  index: index, // 传入实际索引
-                  isActive: index == _currentIndex && widget.isTabActive,
-                ),
-              );
-            },
-          ),
-        ),
-
-        // 顶部容错提示条
-        if (_errorMessage != null)
-          Positioned(
-            top: 40, // 已经在 40，刚好避开 WindowCaption
-            left: 0,
-            right: 0,
+  Widget _buildFeedSwitcher() {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.28),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: VideoFeedMode.values.map((mode) {
+          final isSelected = mode == _currentFeedMode;
+          return GestureDetector(
+            onTap: () => _switchFeedMode(mode),
+            behavior: HitTestBehavior.opaque,
             child: Container(
-              color: AppColors.error.withValues(alpha: 0.8),
-              padding: const EdgeInsets.symmetric(vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              decoration: BoxDecoration(
+                color: isSelected ? Colors.white : Colors.transparent,
+                borderRadius: BorderRadius.circular(20),
+              ),
               child: Text(
-                _errorMessage!,
-                textAlign: TextAlign.center,
-                style: AppTypography.labelLarge.copyWith(color: Colors.white),
+                mode.tabLabel,
+                style: TextStyle(
+                  color: isSelected ? Colors.black : Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
-          ),
-      ],
+          );
+        }).toList(),
+      ),
     );
   }
 
@@ -424,9 +581,15 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
 
   @override
   Widget build(BuildContext context) {
-    // 物理级映射：根据真实 index 获取底层被分配的 3 个常驻 C++ 引擎之一
+    // 物理级映射：根据真实 index 获取底层被分配的常驻 C++ 引擎槽位
     final controller = VideoEnginePool.instance.getController(widget.index);
     final player = VideoEnginePool.instance.getPlayer(widget.index);
+    final videoWidth = (widget.video.width ?? (widget.video.isLandscape ? 1920 : 1080))
+        .toDouble();
+    final videoHeight =
+        (widget.video.height ?? (widget.video.isLandscape ? 1080 : 1920))
+            .toDouble();
+    final fit = widget.video.isLandscape ? BoxFit.contain : BoxFit.cover;
 
     return GestureDetector(
       onTap: () =>
@@ -434,59 +597,37 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // 1. 底层封面图 (Poster Layer) - 终极防残影机制
-          // 当视频底层在异步加载或被系统回收时，使用模糊的首帧图兜底，绝对不能露黑屏或上一条视频的残影
-          SizedBox.expand(
-            child: widget.video.coverUrl.isNotEmpty
-                ? CachedNetworkImage(
-                    imageUrl: widget.video.coverUrl,
-                    fit: BoxFit.cover,
-                    // 骨架屏占位：在封面还没加载出来时，用纯黑打底
-                    placeholder: (context, url) =>
-                        Container(color: Colors.black),
-                    errorWidget: (context, url, error) =>
-                        Container(color: Colors.black),
-                  )
-                : Container(color: Colors.black), // 如果没有封面，使用物理级黑场遮罩
-          ),
+          Container(color: Colors.black),
 
-          // 2. 视频底层渲染 (Zero-copy 直出)
-          SizedBox.expand(
-            child: FittedBox(
-              fit: BoxFit.cover, // 裁切适应全屏（抖音模式）
-              child: SizedBox(
-                width: MediaQuery.of(context).size.width,
-                height: MediaQuery.of(context).size.height,
-                child: StreamBuilder<bool>(
-                  stream: player.stream.playing,
-                  builder: (context, snapshot) {
-                    final isPlaying = snapshot.data ?? false;
-                    return Opacity(
-                      opacity: isPlaying ? 1.0 : 0.0,
-                      child: Video(
-                        controller: controller,
-                        controls: NoVideoControls,
-                      ),
-                    );
-                  },
+          // 1. 视频真实帧直出：切换时不再回退到封面层，暂停和卡住都保留最后一帧
+          ValueListenableBuilder<int>(
+            valueListenable: VideoEnginePool.instance.stateVersion,
+            builder: (context, _, __) {
+              final showVideo = VideoEnginePool.instance.isVisualReady(
+                widget.index,
+                widget.video.playbackSourceKey,
+              );
+              if (!showVideo) {
+                return const SizedBox.expand();
+              }
+
+              return SizedBox.expand(
+                child: FittedBox(
+                  fit: fit,
+                  child: SizedBox(
+                    width: videoWidth,
+                    height: videoHeight,
+                    child: Video(
+                      controller: controller,
+                      controls: NoVideoControls,
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ),
-
-          // 2. 状态蒙层 (暂停图标)
-          StreamBuilder<bool>(
-            stream: player.stream.playing,
-            builder: (context, playingSnapshot) {
-              final isPlaying = playingSnapshot.data ?? false;
-              if (isPlaying || !widget.isActive) return const SizedBox();
-              return const Center(
-                child: Icon(Icons.play_arrow, size: 80, color: Colors.white),
               );
             },
           ),
 
-          // 3. 底部信息层 (作者、文案)
+          // 2. 底部信息层 (作者、文案)
           Positioned(
             bottom: 80, // 避开最底部的进度条和底部导航栏
             left: 16,
@@ -506,11 +647,21 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _buildMetaBadge(widget.video.statusLabel),
+                    _buildMetaBadge(widget.video.distributionChannelLabel),
+                    _buildMetaBadge(widget.video.primaryDistributionLabel),
+                  ],
+                ),
               ],
             ),
           ),
 
-          // 4. 右侧操作区 (点赞、评论、分享、发布)
+          // 3. 右侧操作区 (点赞、评论、分享、发布)
           Positioned(
             bottom: 80, // 和底部信息层对齐，避开进度条和底部导航栏
             right: 8,
@@ -577,7 +728,7 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
             ),
           ),
 
-          // 5. 沉浸式动态进度条 (仅在主动暂停且非初始缓冲时显示，带平滑动画防闪烁)
+          // 4. 沉浸式动态进度条 (仅在主动暂停且非初始缓冲时显示，带平滑动画防闪烁)
           Positioned(
             bottom: 50, // 稍微上移一点，留出 Slider 的点击热区
             left: 0,
@@ -680,6 +831,24 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
               .copyWith(color: Colors.white, fontWeight: FontWeight.w500),
         ),
       ],
+    );
+  }
+
+  Widget _buildMetaBadge(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white, width: 1),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
     );
   }
 

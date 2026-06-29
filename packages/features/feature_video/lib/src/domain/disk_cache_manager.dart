@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
+import 'video_engine_pool.dart';
 
 /// 顶级商业级磁盘视频缓存引擎 (Commercial-Grade LRU Disk Cache)
 /// 具备 LRU (最近最少使用) 淘汰算法、容量上限防爆机制、并发下载锁
@@ -17,9 +18,11 @@ class DiskVideoCacheManager {
   // 核心：使用 LinkedHashMap 实现 LRU 淘汰算法 (按插入和访问顺序排序)
   // 头部是最旧的 (即将被淘汰)，尾部是最新的
   final LinkedHashMap<String, String> _lruCache = LinkedHashMap<String, String>();
+  int _cachedBytes = 0;
 
   // 商业级参数设定
   static const int maxCacheFiles = 100; // 最多缓存 100 个视频 (约 150MB-200MB)
+  static const int maxCacheBytes = 600 * 1024 * 1024; // 按总字节治理，避免大文件挤爆磁盘
 
   bool _isInitialized = false;
 
@@ -41,6 +44,7 @@ class DiskVideoCacheManager {
         
         for (var file in files) {
           _lruCache[file.path] = file.path;
+          _cachedBytes += file.lengthSync();
         }
         
         // 启动时触发一次静默清理，防止上次崩溃导致超限
@@ -60,6 +64,11 @@ class DiskVideoCacheManager {
     return '${_cacheDir!.path}/$fileName';
   }
 
+  bool _isStreamManifestUrl(String url) {
+    final lowerUrl = url.toLowerCase();
+    return lowerUrl.contains('.m3u8');
+  }
+
   /// 预加载调度入口 (Fire and Forget)
   void preload(List<String> urls) {
     if (!_isInitialized || _cacheDir == null) return;
@@ -68,9 +77,24 @@ class DiskVideoCacheManager {
     }
   }
 
+  void preloadPlaybackSources(List<VideoPlaybackSource> sources) {
+    if (!_isInitialized || _cacheDir == null) return;
+    for (final source in sources) {
+      if (source.prefersStreaming) {
+        final fallbackUrl = source.fallbackUrl;
+        if (fallbackUrl != null && fallbackUrl.isNotEmpty) {
+          _download(fallbackUrl);
+        }
+        continue;
+      }
+      _download(source.primaryUrl);
+    }
+  }
+
   /// 执行静默下载写入
   Future<void> _download(String url) async {
     if (url.startsWith('file://') || url.startsWith('assets/')) return;
+    if (_isStreamManifestUrl(url)) return;
     
     final filePath = _getFilePath(url);
     
@@ -90,9 +114,11 @@ class DiskVideoCacheManager {
       
       // 下载完成后重命名，确保播放器读取时文件是完整的 (原子操作防撕裂)
       File(tempFilePath).renameSync(filePath);
+      final downloadedFile = File(filePath);
       
       // 写入 LRU 缓存并触发淘汰检测
       _lruCache[filePath] = filePath;
+      _cachedBytes += downloadedFile.lengthSync();
       _evictIfNeeded();
       
     } catch (e) {
@@ -109,6 +135,7 @@ class DiskVideoCacheManager {
   /// 拦截器：向上层返回可直接播放的 URL，并刷新 LRU 权重
   String getPlayableUrl(String originalUrl) {
     if (!_isInitialized || originalUrl.startsWith('file://')) return originalUrl;
+    if (_isStreamManifestUrl(originalUrl)) return originalUrl;
     
     final filePath = _getFilePath(originalUrl);
     if (_lruCache.containsKey(filePath) && File(filePath).existsSync()) {
@@ -127,7 +154,7 @@ class DiskVideoCacheManager {
   
   /// LRU 淘汰算法 (残酷抹杀机制)
   void _evictIfNeeded() {
-    while (_lruCache.length > maxCacheFiles) {
+    while (_lruCache.length > maxCacheFiles || _cachedBytes > maxCacheBytes) {
       // 取出队列头部最旧的文件 (最久未被观看的)
       final oldestFilePath = _lruCache.keys.first;
       _lruCache.remove(oldestFilePath);
@@ -135,7 +162,12 @@ class DiskVideoCacheManager {
       try {
         final file = File(oldestFilePath);
         if (file.existsSync()) {
+          final fileBytes = file.lengthSync();
           file.deleteSync();
+          _cachedBytes -= fileBytes;
+          if (_cachedBytes < 0) {
+            _cachedBytes = 0;
+          }
           debugPrint('【DiskCache】LRU 触发: 物理抹杀极旧缓存文件 -> $oldestFilePath');
         }
       } catch (e) {

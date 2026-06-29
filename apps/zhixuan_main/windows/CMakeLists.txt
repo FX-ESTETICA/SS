@@ -71,6 +71,10 @@ endif()
 
 set(INSTALL_BUNDLE_DATA_DIR "${CMAKE_INSTALL_PREFIX}/data")
 set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}")
+set(INSTALL_BUNDLE_TOOLS_DIR "${CMAKE_INSTALL_PREFIX}/tools")
+
+set(APP_FFMPEG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ffmpeg")
+set(APP_FFMPEG_BINARY "${APP_FFMPEG_DIR}/ffmpeg.exe")
 
 install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
@@ -85,6 +89,15 @@ if(PLUGIN_BUNDLED_LIBRARIES)
   install(FILES "${PLUGIN_BUNDLED_LIBRARIES}"
     DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
+endif()
+
+if(EXISTS "${APP_FFMPEG_BINARY}")
+  message(STATUS "Bundling app-local FFmpeg: ${APP_FFMPEG_BINARY}")
+  install(FILES "${APP_FFMPEG_BINARY}"
+    DESTINATION "${INSTALL_BUNDLE_TOOLS_DIR}"
+    COMPONENT Runtime)
+else()
+  message(STATUS "App-local FFmpeg not found. Expected at: ${APP_FFMPEG_BINARY}")
 endif()
 
 # Copy the native assets provided by the build.dart from all packages.

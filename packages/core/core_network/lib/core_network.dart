@@ -7,3 +7,4 @@ export 'src/domain/failures.dart';
 export 'src/data/auth_repository.dart';
 export 'src/data/identity_repository.dart';
 export 'src/models/identity_models.dart';
+export 'src/models/platform_video_record.dart';

@@ -468,10 +468,10 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
                 width: cardWidth,
                 margin: const EdgeInsets.only(right: 12.0),
                 child: _selectedMainCategoryIndex == 0
-                    ? _buildStoreCard(product)
+                    ? _buildStoreCard(product, index)
                     : (_selectedMainCategoryIndex == 1
-                        ? _buildMallCard(product)
-                        : _buildLifeCard(product)),
+                        ? _buildMallCard(product, index)
+                        : _buildLifeCard(product, index)),
               );
             },
           ),
@@ -678,10 +678,11 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
   }
 
   /// 1. 商店卡片：横向 16:9 比例，侧重展示商店名、评分和距离
-  Widget _buildStoreCard(ProductModel product) {
+  Widget _buildStoreCard(ProductModel product, int index) {
+    final heroTag = _buildProductHeroTag(product, 'store', index);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => _navigateToDetail(product),
+      onTap: () => _navigateToDetail(product, sourceHeroTag: heroTag),
       child: Container(
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
@@ -699,7 +700,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
           children: [
             // 背景大图
             Hero(
-              tag: 'product_image_${product.id ?? product.imageUrl}',
+              tag: heroTag,
               child: CachedNetworkImage(
                 imageUrl: product.imageUrl,
                 fit: BoxFit.cover,
@@ -795,10 +796,11 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
   }
 
   /// 2. 商城卡片：竖向比例，沉浸式信息覆盖
-  Widget _buildMallCard(ProductModel product) {
+  Widget _buildMallCard(ProductModel product, int index) {
+    final heroTag = _buildProductHeroTag(product, 'mall', index);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => _navigateToDetail(product),
+      onTap: () => _navigateToDetail(product, sourceHeroTag: heroTag),
       child: Container(
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
@@ -808,7 +810,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
           fit: StackFit.expand,
           children: [
             Hero(
-              tag: 'product_image_${product.id ?? product.imageUrl}',
+              tag: heroTag,
               child: CachedNetworkImage(
                 imageUrl: product.imageUrl,
                 fit: BoxFit.cover,
@@ -893,10 +895,11 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
   }
 
   /// 3. 生活卡片：58同城类服务，侧重展示服务商家名、评分和距离
-  Widget _buildLifeCard(ProductModel product) {
+  Widget _buildLifeCard(ProductModel product, int index) {
+    final heroTag = _buildProductHeroTag(product, 'life', index);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => _navigateToDetail(product),
+      onTap: () => _navigateToDetail(product, sourceHeroTag: heroTag),
       child: Container(
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
@@ -906,7 +909,7 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
           fit: StackFit.expand,
           children: [
             Hero(
-              tag: 'product_image_${product.id ?? product.imageUrl}',
+              tag: heroTag,
               child: CachedNetworkImage(
                 imageUrl: product.imageUrl,
                 fit: BoxFit.cover,
@@ -1010,9 +1013,14 @@ class _ShopFeedScreenState extends State<ShopFeedScreen> {
     );
   }
 
-  void _navigateToDetail(ProductModel product) {
+  String _buildProductHeroTag(ProductModel product, String variant, int index) {
+    final productKey = product.id ?? product.imageUrl;
+    return 'product_image_${variant}_${_selectedMainCategoryIndex}_${index}_$productKey';
+  }
+
+  void _navigateToDetail(ProductModel product, {String? sourceHeroTag}) {
     final Widget page = _selectedMainCategoryIndex == 1
-        ? ProductDetailScreen(product: product)
+        ? ProductDetailScreen(product: product, sourceHeroTag: sourceHeroTag)
         : LocalServiceDetailScreen(
             product: product,
             isStore: _selectedMainCategoryIndex == 0,

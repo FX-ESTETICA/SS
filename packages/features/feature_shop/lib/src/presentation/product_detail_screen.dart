@@ -7,11 +7,13 @@ import 'shop_feed_screen.dart'; // 引入 ProductModel
 class ProductDetailScreen extends StatefulWidget {
   final ProductModel product;
   final bool isMerchantMode;
+  final String? sourceHeroTag;
 
   const ProductDetailScreen({
     super.key,
     required this.product,
     this.isMerchantMode = true, // 临时默认为 true，方便预览编辑模式
+    this.sourceHeroTag,
   });
 
   @override
@@ -401,7 +403,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         children: [
           Hero(
             tag: index == 0
-                ? 'product_image_${widget.product.id ?? widget.product.imageUrl}'
+                ? (widget.sourceHeroTag ??
+                    'product_image_${widget.product.id ?? widget.product.imageUrl}')
                 : 'media_$index',
             child: CachedNetworkImage(
               imageUrl: url,
