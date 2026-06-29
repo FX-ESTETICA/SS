@@ -373,6 +373,42 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     }
   }
 
+  void _focusPublishedVideo(PendingPublishedVideo video) {
+    final targetMode = video.contentOrientation == 'landscape'
+        ? VideoFeedMode.landscape
+        : VideoFeedMode.portrait;
+    final targetList = _videosByMode[targetMode]!;
+    final targetIndex = targetList.indexWhere(
+      (item) =>
+          item.publishJobId == video.jobId ||
+          item.primaryPlaybackUrl == video.primaryPlaybackUrl,
+    );
+    if (targetIndex == -1) {
+      return;
+    }
+
+    if (_currentFeedMode != targetMode) {
+      _switchFeedMode(targetMode);
+    }
+
+    setState(() {
+      _currentIndexByMode[targetMode] = targetIndex;
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      if (_currentFeedMode != targetMode) {
+        _replacePageController(targetIndex);
+      }
+      if (_pageController.hasClients) {
+        _pageController.jumpToPage(targetIndex);
+      }
+      _syncFocusForCurrentFeed();
+    });
+  }
+
   void _upsertPendingVideo(PendingPublishedVideo pendingVideo) {
     final targetMode = pendingVideo.contentOrientation == 'landscape'
         ? VideoFeedMode.landscape
@@ -709,73 +745,91 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 22,
-                height: 22,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
-                ),
-                child: Center(
-                  child: isCompleted
-                      ? const Icon(Icons.check, color: Colors.white, size: 12)
-                      : isFailed
-                          ? const Icon(Icons.close, color: Colors.white, size: 12)
-                          : const SizedBox(
-                              width: 10,
-                              height: 10,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Flexible(
-                child: Text(
-                  isFailed ? (state.error ?? state.message) : state.message,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          if (isFailed && state.jobId != null) ...[
-            const SizedBox(height: 10),
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 180),
+        child: Column(
+          key: ValueKey(state.stage),
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _buildOverlayAction(
-                  label: '重试',
-                  filled: true,
-                  onTap: () => _publishOverlayStore.retryFailedPublish(
-                    state.jobId!,
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isCompleted ? Colors.white : Colors.transparent,
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                  child: Center(
+                    child: isCompleted
+                        ? const Icon(Icons.check, color: Colors.black, size: 12)
+                        : isFailed
+                            ? const Icon(Icons.close, color: Colors.white, size: 12)
+                            : const SizedBox(
+                                width: 10,
+                                height: 10,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                _buildOverlayAction(
-                  label: '关闭',
-                  onTap: () => _publishOverlayStore.dismissFailure(
-                    state.jobId!,
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    isCompleted
+                        ? '发布完成，下一条就是你的作品'
+                        : isFailed
+                            ? (state.error ?? state.message)
+                            : state.message,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
             ),
+            if (isCompleted && state.completedVideo != null) ...[
+              const SizedBox(height: 10),
+              _buildOverlayAction(
+                label: '查看作品',
+                filled: true,
+                onTap: () => _focusPublishedVideo(state.completedVideo!),
+              ),
+            ],
+            if (isFailed && state.jobId != null) ...[
+              const SizedBox(height: 10),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildOverlayAction(
+                    label: '重试',
+                    filled: true,
+                    onTap: () => _publishOverlayStore.retryFailedPublish(
+                      state.jobId!,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _buildOverlayAction(
+                    label: '关闭',
+                    onTap: () => _publishOverlayStore.dismissFailure(
+                      state.jobId!,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

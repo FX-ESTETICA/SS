@@ -306,7 +306,6 @@ class _ImmersiveVideoItem extends StatefulWidget {
 
 class _ImmersiveVideoItemState extends State<_ImmersiveVideoItem> {
   bool _isDragging = false;
-  bool _showPausedIcon = false;
 
   @override
   Widget build(BuildContext context) {

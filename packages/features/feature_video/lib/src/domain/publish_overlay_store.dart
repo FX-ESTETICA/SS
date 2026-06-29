@@ -543,7 +543,7 @@ class PublishOverlayStore extends ChangeNotifier {
         '发布完成',
         completedVideo: completedVideo,
       );
-      await Future.delayed(const Duration(seconds: 2));
+      await Future.delayed(const Duration(milliseconds: 3200));
       if (_state.jobId == jobId) {
         _state = const PublishOverlayState.idle();
         notifyListeners();
