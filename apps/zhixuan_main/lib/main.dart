@@ -222,15 +222,25 @@ class _MainScreenState extends State<MainScreen> {
   // 默认启动页修改为视频页（索引 2）
   int _currentIndex = 2;
 
+  Future<void> _openVideoUploadCamera() async {
+    CameraWarmupLease? warmLease;
+    try {
+      warmLease = await CameraWarmupService.instance.takeWarmController(
+        userInitiated: true,
+      );
+    } catch (_) {}
+    if (!mounted) {
+      return;
+    }
+    await context.pushImmersive<void>(
+      builder: (context) => VideoUploadScreen(initialWarmLease: warmLease),
+    );
+  }
+
   Future<void> _handleBottomNavigationTap(int index) async {
     if (index == 2) {
       if (_currentIndex == 2) {
-        await InstantUI.showDialog<void>(
-          context,
-          barrierDismissible: false,
-          barrierColor: Colors.black,
-          builder: (context) => const VideoUploadScreen(),
-        );
+        await _openVideoUploadCamera();
         return;
       }
       setState(() => _currentIndex = 2);

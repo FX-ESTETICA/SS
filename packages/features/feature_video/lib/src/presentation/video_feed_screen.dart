@@ -1592,15 +1592,26 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
                 ],
                 // 发布/添加视频按钮，作为最顶端的UI设计重构，放在最末尾
                 GestureDetector(
-                  onTap: () {
+                  onTap: () async {
                     if (SupabaseService.currentSession == null) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('请先登录后再发布视频')),
                       );
                       return;
                     }
+                    CameraWarmupLease? warmLease;
+                    try {
+                      warmLease = await CameraWarmupService.instance
+                          .takeWarmController(
+                        userInitiated: true,
+                      );
+                    } catch (_) {}
+                    if (!context.mounted) {
+                      return;
+                    }
                     context.pushImmersive<void>(
-                      builder: (context) => const VideoUploadScreen(),
+                      builder: (context) =>
+                          VideoUploadScreen(initialWarmLease: warmLease),
                     );
                   },
                   child: Container(
