@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:core_design_system/core_design_system.dart';
 import 'package:core_network/core_network.dart';
@@ -14,6 +15,32 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'dart:io';
 
+// #region debug-point A:startup-probe
+Future<void> _debugStartupProbe(
+  String hypothesisId,
+  String location,
+  String msg, {
+  Map<String, Object?> data = const <String, Object?>{},
+  String? traceId,
+}) async {
+  try {
+    final logFile = File(r'c:\Users\49975\Desktop\智选\.dbg\trae-debug-log-startup-black-screen.ndjson');
+    final event = <String, Object?>{
+      'sessionId': 'video-black-frame',
+      'runId': 'post-fix',
+      'hypothesisId': hypothesisId,
+      'ts': DateTime.now().millisecondsSinceEpoch,
+      'location': location,
+      'msg': '[DEBUG] $msg',
+      'data': data,
+      if (traceId != null) 'traceId': traceId,
+    };
+    await logFile.parent.create(recursive: true);
+    await logFile.writeAsString('${jsonEncode(event)}\n', mode: FileMode.append, flush: true);
+  } catch (_) {}
+}
+// #endregion
+
 // 强制覆盖全局 Http 证书校验（仅用于解决桌面端证书链不全的问题）
 class MyHttpOverrides extends HttpOverrides {
   @override
@@ -25,8 +52,21 @@ class MyHttpOverrides extends HttpOverrides {
 }
 
 void main() async {
+  final startupTraceId = 'startup-${DateTime.now().microsecondsSinceEpoch}';
+  final startupStopwatch = Stopwatch()..start();
   // 确保 Flutter 引擎完全绑定，这是初始化云端服务的前提
   WidgetsFlutterBinding.ensureInitialized();
+  // #region debug-point A:start
+  unawaited(_debugStartupProbe(
+    'A',
+    'main.dart:main',
+    'startup_enter',
+    traceId: startupTraceId,
+    data: <String, Object?>{
+      'platform': Platform.operatingSystem,
+    },
+  ));
+  // #endregion
 
   // 解决 Windows 桌面端由于缺少根证书导致的 HttpClient 访问 HTTPS 图片失败的问题
   HttpOverrides.global = MyHttpOverrides();
@@ -38,6 +78,17 @@ void main() async {
 
   // 桌面端无边框窗口初始化
   await windowManager.ensureInitialized();
+  // #region debug-point A:window-ready
+  unawaited(_debugStartupProbe(
+    'A',
+    'main.dart:windowManager.ensureInitialized',
+    'window_manager_ready',
+    traceId: startupTraceId,
+    data: <String, Object?>{
+      'elapsedMs': startupStopwatch.elapsedMilliseconds,
+    },
+  ));
+  // #endregion
   WindowOptions windowOptions = const WindowOptions(
     size: Size(1280, 720),
     minimumSize: Size(360, 640),
@@ -53,11 +104,31 @@ void main() async {
 
   // 0. 初始化全局视频 C++ 引擎 (必须在 App 启动的最早期)
   MediaKit.ensureInitialized();
+  // #region debug-point A:mediakit-ready
+  unawaited(_debugStartupProbe(
+    'A',
+    'main.dart:MediaKit.ensureInitialized',
+    'mediakit_ready',
+    traceId: startupTraceId,
+    data: <String, Object?>{
+      'elapsedMs': startupStopwatch.elapsedMilliseconds,
+    },
+  ));
+  // #endregion
   
-  // 初始化终极磁盘级视频缓存代理 (TikTok-level Cache)
-  await DiskVideoCacheManager.instance.initialize();
   // 三端统一相机预热：让首次点击拍摄更接近秒开体感
   unawaited(CameraWarmupService.instance.warmup());
+  // #region debug-point A:camera-warmup-fired
+  unawaited(_debugStartupProbe(
+    'A',
+    'main.dart:CameraWarmupService.warmup',
+    'camera_warmup_fired',
+    traceId: startupTraceId,
+    data: <String, Object?>{
+      'elapsedMs': startupStopwatch.elapsedMilliseconds,
+    },
+  ));
+  // #endregion
 
   // 1. 初始化全球云端引擎 (Supabase)
   // 使用您专属的意大利节点项目密钥，正式接管云端！
@@ -65,6 +136,17 @@ void main() async {
     url: 'https://izpolbeqdttjffbemvjr.supabase.co',
     publishableKey: 'sb_publishable_MFLwIbZIgBmUAnP9rqcSVQ_zzTwpq3y',
   );
+  // #region debug-point A:supabase-ready
+  unawaited(_debugStartupProbe(
+    'A',
+    'main.dart:SupabaseService.initialize',
+    'supabase_ready',
+    traceId: startupTraceId,
+    data: <String, Object?>{
+      'elapsedMs': startupStopwatch.elapsedMilliseconds,
+    },
+  ));
+  // #endregion
 
   // 2. 初始化全局基础设置 (网络API、本地数据库引擎等)
   final apiClient = ApiClient(baseUrl: 'https://api.zhixuan.global');
@@ -75,6 +157,32 @@ void main() async {
       child: ZhixuanSuperApp(apiClient: apiClient),
     ),
   );
+  // #region debug-point A:runapp
+  unawaited(_debugStartupProbe(
+    'A',
+    'main.dart:runApp',
+    'run_app_dispatched',
+    traceId: startupTraceId,
+    data: <String, Object?>{
+      'elapsedMs': startupStopwatch.elapsedMilliseconds,
+    },
+  ));
+  // #endregion
+
+  unawaited(() async {
+    await DiskVideoCacheManager.instance.initialize();
+    // #region debug-point A:disk-cache-ready
+    await _debugStartupProbe(
+      'A',
+      'main.dart:DiskVideoCacheManager.initialize',
+      'disk_cache_ready',
+      traceId: startupTraceId,
+      data: <String, Object?>{
+        'elapsedMs': startupStopwatch.elapsedMilliseconds,
+      },
+    );
+    // #endregion
+  }());
 }
 
 class ZhixuanSuperApp extends StatelessWidget {
@@ -113,6 +221,23 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   // 默认启动页修改为视频页（索引 2）
   int _currentIndex = 2;
+
+  Future<void> _handleBottomNavigationTap(int index) async {
+    if (index == 2) {
+      if (_currentIndex == 2) {
+        await InstantUI.showDialog<void>(
+          context,
+          barrierDismissible: false,
+          barrierColor: Colors.black,
+          builder: (context) => const VideoUploadScreen(),
+        );
+        return;
+      }
+      setState(() => _currentIndex = 2);
+      return;
+    }
+    setState(() => _currentIndex = index);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -196,7 +321,7 @@ class _MainScreenState extends State<MainScreen> {
         ),
         child: BottomNavigationBar(
           currentIndex: _currentIndex,
-          onTap: (index) => setState(() => _currentIndex = index),
+          onTap: _handleBottomNavigationTap,
           elevation: 0, // 移除阴影
           backgroundColor: Colors.transparent, // 完全透明背景
           showSelectedLabels: false, // 隐藏选中时的文字
@@ -217,9 +342,9 @@ class _MainScreenState extends State<MainScreen> {
                     : Icons.shopping_bag_outlined),
                 label: ''),
             BottomNavigationBarItem(
-                icon: Icon(_currentIndex == 2
-                    ? Icons.play_circle
-                    : Icons.play_circle_outline),
+                icon: _currentIndex == 2
+                    ? _buildVideoTabIcon(isSelected: true)
+                    : const Icon(Icons.play_circle_outline),
                 label: ''),
             BottomNavigationBarItem(
                 icon: Icon(_currentIndex == 3
@@ -244,6 +369,50 @@ class _MainScreenState extends State<MainScreen> {
       size: isSelected ? 24 : 22,
       fallbackIcon: isSelected ? Icons.person : Icons.person_outline,
       fallbackIconSize: isSelected ? 15 : 14,
+    );
+  }
+
+  Widget _buildVideoTabIcon({required bool isSelected}) {
+    return SizedBox(
+      width: 24,
+      height: 24,
+      child: Center(
+        child: Container(
+          width: 22,
+          height: 22,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: Colors.white,
+              width: isSelected ? 2.2 : 2.0,
+            ),
+          ),
+          child: Center(
+            child: Container(
+              width: 10,
+              height: 10,
+              decoration: const BoxDecoration(
+                color: Colors.transparent,
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Container(
+                    width: 10,
+                    height: isSelected ? 2.2 : 2.0,
+                    color: Colors.white,
+                  ),
+                  Container(
+                    width: isSelected ? 2.2 : 2.0,
+                    height: 10,
+                    color: Colors.white,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

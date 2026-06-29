@@ -3,10 +3,7 @@ import 'package:core_network/core_network.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-const String kDefaultProfileAvatarUrl =
-    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80';
-
-String resolveCurrentUserAvatarUrl({String? sharedAvatarUrl}) {
+String? resolveCurrentUserAvatarUrl({String? sharedAvatarUrl}) {
   if (sharedAvatarUrl != null && sharedAvatarUrl.trim().isNotEmpty) {
     return sharedAvatarUrl.trim();
   }
@@ -16,7 +13,7 @@ String resolveCurrentUserAvatarUrl({String? sharedAvatarUrl}) {
   if (rawAvatarUrl is String && rawAvatarUrl.trim().isNotEmpty) {
     return rawAvatarUrl.trim();
   }
-  return kDefaultProfileAvatarUrl;
+  return null;
 }
 
 class CurrentUserAvatar extends ConsumerWidget {
@@ -62,23 +59,12 @@ class CurrentUserAvatar extends ConsumerWidget {
             ),
             child: ClipOval(
               child: avatarUrl == null
-                  ? Center(
-                      child: Icon(
-                        fallbackIcon,
-                        color: fallbackIconColor,
-                        size: fallbackIconSize,
-                      ),
-                    )
+                  ? const SizedBox.expand()
                   : CachedNetworkImage(
                       imageUrl: avatarUrl,
                       fit: BoxFit.cover,
-                      errorWidget: (context, url, error) => Center(
-                        child: Icon(
-                          fallbackIcon,
-                          color: fallbackIconColor,
-                          size: fallbackIconSize,
-                        ),
-                      ),
+                      errorWidget: (context, url, error) =>
+                          const SizedBox.expand(),
                     ),
             ),
           );

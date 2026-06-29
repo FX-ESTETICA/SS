@@ -1,13 +1,49 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:core_design_system/core_design_system.dart';
 import 'package:core_network/core_network.dart'; // 引入云端服务
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:path_provider/path_provider.dart';
 import '../domain/camera_warmup_service.dart';
+import '../domain/disk_cache_manager.dart';
 import '../domain/video_engine_pool.dart'; // 引入底层引擎池
 import '../domain/publish_overlay_store.dart';
 import 'video_upload_screen.dart'; // 引入上传页面
+
+// #region debug-point B:feed-probe
+Future<void> _debugFeedProbe(
+  String hypothesisId,
+  String location,
+  String msg, {
+  Map<String, Object?> data = const <String, Object?>{},
+  String? traceId,
+}) async {
+  try {
+    final logFile = File(
+      r'c:\Users\49975\Desktop\智选\.dbg\trae-debug-log-startup-black-screen.ndjson',
+    );
+    final event = <String, Object?>{
+      'sessionId': 'video-black-frame',
+      'runId': 'post-fix',
+      'hypothesisId': hypothesisId,
+      'ts': DateTime.now().millisecondsSinceEpoch,
+      'location': location,
+      'msg': '[DEBUG] $msg',
+      'data': data,
+      if (traceId != null) 'traceId': traceId,
+    };
+    await logFile.parent.create(recursive: true);
+    await logFile.writeAsString(
+      '${jsonEncode(event)}\n',
+      mode: FileMode.append,
+      flush: true,
+    );
+  } catch (_) {}
+}
+// #endregion
 
 enum VideoFeedMode {
   portrait(
@@ -36,8 +72,7 @@ enum VideoFeedMode {
 class VideoModel {
   final String url;
   final String primaryPlaybackUrl;
-  final String? fallbackPlaybackUrl;
-  final bool prefersStreaming;
+  final String? launchPlaybackUrl;
   final String coverUrl; // 独立的封面链接
   final String authorName;
   final String description;
@@ -60,8 +95,7 @@ class VideoModel {
   VideoModel({
     required this.url,
     required this.primaryPlaybackUrl,
-    this.fallbackPlaybackUrl,
-    this.prefersStreaming = false,
+    this.launchPlaybackUrl,
     required this.coverUrl,
     required this.authorName,
     required this.description,
@@ -83,21 +117,17 @@ class VideoModel {
   });
 
   bool get isLandscape => contentOrientation == 'landscape';
-  String get playbackSourceKey => prefersStreaming
-      ? '$primaryPlaybackUrl|${fallbackPlaybackUrl ?? ''}'
-      : primaryPlaybackUrl;
+  String get playbackSourceKey => primaryPlaybackUrl;
   VideoPlaybackSource get playbackSource => VideoPlaybackSource(
         primaryUrl: primaryPlaybackUrl,
-        fallbackUrl: fallbackPlaybackUrl,
-        prefersStreaming: prefersStreaming,
+        playableUrlOverride: launchPlaybackUrl,
       );
 
   factory VideoModel.fromRecord(PlatformVideoRecord record) {
     return VideoModel(
       url: record.primaryPlaybackUrl,
       primaryPlaybackUrl: record.primaryPlaybackUrl,
-      fallbackPlaybackUrl: record.fallbackPlaybackUrl,
-      prefersStreaming: record.prefersStreaming,
+      launchPlaybackUrl: null,
       coverUrl: record.coverUrl,
       authorName: record.authorName,
       description: record.description,
@@ -113,6 +143,87 @@ class VideoModel {
       statusLabel: record.statusLabel,
     );
   }
+
+  factory VideoModel.fromJson(Map<String, dynamic> json) {
+    return VideoModel(
+      url: json['url'] as String? ?? '',
+      primaryPlaybackUrl: json['primaryPlaybackUrl'] as String? ?? '',
+      launchPlaybackUrl: null,
+      coverUrl: json['coverUrl'] as String? ?? '',
+      authorName: json['authorName'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+      viewCount: json['viewCount'] as int? ?? 0,
+      likeCount: json['likeCount'] as int? ?? 0,
+      commentCount: json['commentCount'] as int? ?? 0,
+      shareCount: json['shareCount'] as int? ?? 0,
+      width: json['width'] as int?,
+      height: json['height'] as int?,
+      contentOrientation: json['contentOrientation'] as String? ?? 'portrait',
+      distributionChannelLabel:
+          json['distributionChannelLabel'] as String? ?? '',
+      primaryDistributionLabel:
+          json['primaryDistributionLabel'] as String? ?? '',
+      statusLabel: json['statusLabel'] as String? ?? '',
+      isPending: json['isPending'] as bool? ?? false,
+      isFailed: json['isFailed'] as bool? ?? false,
+      publishJobId: json['publishJobId'] as String?,
+      pendingMessage: json['pendingMessage'] as String? ?? '',
+      errorMessage: json['errorMessage'] as String?,
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'url': url,
+      'primaryPlaybackUrl': primaryPlaybackUrl,
+      'coverUrl': coverUrl,
+      'authorName': authorName,
+      'description': description,
+      'viewCount': viewCount,
+      'likeCount': likeCount,
+      'commentCount': commentCount,
+      'shareCount': shareCount,
+      'width': width,
+      'height': height,
+      'contentOrientation': contentOrientation,
+      'distributionChannelLabel': distributionChannelLabel,
+      'primaryDistributionLabel': primaryDistributionLabel,
+      'statusLabel': statusLabel,
+      'isPending': isPending,
+      'isFailed': isFailed,
+      'publishJobId': publishJobId,
+      'pendingMessage': pendingMessage,
+      'errorMessage': errorMessage,
+    };
+  }
+
+  VideoModel copyWith({
+    String? launchPlaybackUrl,
+  }) {
+    return VideoModel(
+      url: url,
+      primaryPlaybackUrl: primaryPlaybackUrl,
+      launchPlaybackUrl: launchPlaybackUrl ?? this.launchPlaybackUrl,
+      coverUrl: coverUrl,
+      authorName: authorName,
+      description: description,
+      viewCount: viewCount,
+      likeCount: likeCount,
+      commentCount: commentCount,
+      shareCount: shareCount,
+      width: width,
+      height: height,
+      contentOrientation: contentOrientation,
+      distributionChannelLabel: distributionChannelLabel,
+      primaryDistributionLabel: primaryDistributionLabel,
+      statusLabel: statusLabel,
+      isPending: isPending,
+      isFailed: isFailed,
+      publishJobId: publishJobId,
+      pendingMessage: pendingMessage,
+      errorMessage: errorMessage,
+    );
+  }
 }
 
 /// 抖音风格短视频瀑布流主页面
@@ -125,11 +236,20 @@ class VideoFeedScreen extends StatefulWidget {
 }
 
 class _VideoFeedScreenState extends State<VideoFeedScreen> {
+  static const int _initialFetchLimit = 3;
+  static const int _pagingFetchLimit = 10;
+  static const Duration _initialRenderableWait = Duration(milliseconds: 1400);
+  static const Duration _initialRenderablePoll = Duration(milliseconds: 40);
+  static const String _launchSnapshotDirectoryName = 'zhixuan_launch_feed';
   late PageController _pageController;
   late final PublishOverlayStore _publishOverlayStore;
   final Map<VideoFeedMode, List<VideoModel>> _videosByMode = {
     VideoFeedMode.portrait: [],
     VideoFeedMode.landscape: [],
+  };
+  final Map<VideoFeedMode, bool> _didPrimeMoreByMode = {
+    VideoFeedMode.portrait: false,
+    VideoFeedMode.landscape: false,
   };
   final Map<VideoFeedMode, int> _currentIndexByMode = {
     VideoFeedMode.portrait: 0,
@@ -148,6 +268,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   bool _isLoading = true;
   bool _isPaging = false; // 翻页状态锁
   String? _lastHandledPublishJobId;
+  final Stopwatch _screenStopwatch = Stopwatch()..start();
 
   List<VideoModel> get _videos => _videosByMode[_currentFeedMode]!;
   String? get _errorMessage => _errorMessageByMode[_currentFeedMode];
@@ -156,6 +277,18 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   @override
   void initState() {
     super.initState();
+    // #region debug-point B:feed-init
+    unawaited(
+      _debugFeedProbe(
+        'B',
+        'video_feed_screen.dart:initState',
+        'feed_init_state',
+        data: <String, Object?>{
+          'isTabActive': widget.isTabActive,
+        },
+      ),
+    );
+    // #endregion
     // 1. 初始化 C++ 引擎池
     VideoEnginePool.instance.initialize();
 
@@ -163,7 +296,138 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     _publishOverlayStore.addListener(_handlePublishOverlayChanged);
     _pageController = PageController();
     unawaited(CameraWarmupService.instance.warmup());
-    _fetchVideos();
+    unawaited(_bootstrapFeed());
+  }
+
+  Future<void> _bootstrapFeed() async {
+    await _restoreLaunchSnapshot(_currentFeedMode);
+    await _fetchHeadVideo(_currentFeedMode);
+    await _fetchVideos();
+  }
+
+  Future<VideoModel> _prepareLaunchReadyVideo(
+    VideoModel video, {
+    Duration maxWait = const Duration(milliseconds: 900),
+  }) async {
+    await DiskVideoCacheManager.instance.initialize();
+    final launchPlayableUrl =
+        await DiskVideoCacheManager.instance.prepareLaunchPlayableUrl(
+      video.playbackSource,
+      maxWait: maxWait,
+    );
+    return video.copyWith(
+      launchPlaybackUrl: launchPlayableUrl == video.primaryPlaybackUrl
+          ? null
+          : launchPlayableUrl,
+    );
+  }
+
+  Future<void> _fetchHeadVideo(VideoFeedMode mode) async {
+    if (_fetchingModes.contains(mode)) return;
+    final headTraceId =
+        'feed-head-${mode.name}-${DateTime.now().microsecondsSinceEpoch}';
+    final stopwatch = Stopwatch()..start();
+    // #region debug-point B:head-fetch-start
+    unawaited(
+      _debugFeedProbe(
+        'B',
+        'video_feed_screen.dart:_fetchHeadVideo',
+        'fetch_head_video_start',
+        traceId: headTraceId,
+        data: <String, Object?>{
+          'mode': mode.name,
+          'existingCount': _videosByMode[mode]!.length,
+        },
+      ),
+    );
+    // #endregion
+    try {
+      final record = await SupabaseService.fetchHeadVideo(
+        distributionChannel: mode.distributionChannel,
+      );
+      if (record == null) {
+        return;
+      }
+      final headVideo = await _prepareLaunchReadyVideo(
+        VideoModel.fromRecord(record),
+        maxWait: const Duration(milliseconds: 1200),
+      );
+      DiskVideoCacheManager.instance
+          .preloadPlaybackSource(headVideo.playbackSource);
+      if (!mounted) {
+        return;
+      }
+      final existingList = _videosByMode[mode]!;
+      final existingHead = existingList.isNotEmpty ? existingList.first : null;
+      final currentHeadKey =
+          existingList.isNotEmpty ? existingList.first.playbackSourceKey : null;
+      final shouldRefreshHeadPlayableUrl = existingHead != null &&
+          existingHead.playbackSourceKey == headVideo.playbackSourceKey &&
+          existingHead.launchPlaybackUrl != headVideo.launchPlaybackUrl;
+      if (currentHeadKey == headVideo.playbackSourceKey &&
+          !shouldRefreshHeadPlayableUrl) {
+        return;
+      }
+      setState(() {
+        if (shouldRefreshHeadPlayableUrl && existingList.isNotEmpty) {
+          existingList[0] = headVideo;
+        } else {
+          existingList
+            ..removeWhere(
+              (video) => video.playbackSourceKey == headVideo.playbackSourceKey,
+            )
+            ..insert(0, headVideo);
+        }
+        _loadedByMode[mode] = true;
+        if (mode == _currentFeedMode) {
+          _currentIndexByMode[mode] = 0;
+          _isLoading = false;
+        }
+      });
+      if (mode == _currentFeedMode) {
+        _replacePageController(0);
+        VideoEnginePool.instance.focusIndex(
+          0,
+          _videosByMode[mode]!.map((video) => video.playbackSource).toList(),
+        );
+      }
+      unawaited(_persistLaunchSnapshot(mode, headVideo));
+      // #region debug-point B:head-fetch-success
+      unawaited(
+        _debugFeedProbe(
+          'B',
+          'video_feed_screen.dart:_fetchHeadVideo',
+          'fetch_head_video_success',
+          traceId: headTraceId,
+          data: <String, Object?>{
+            'mode': mode.name,
+            'elapsedMs': stopwatch.elapsedMilliseconds,
+            'sourceKey': headVideo.playbackSourceKey,
+            'isCached': DiskVideoCacheManager.instance.hasCachedUrl(
+              headVideo.primaryPlaybackUrl,
+            ),
+          },
+        ),
+      );
+      // #endregion
+    } catch (e) {
+      // #region debug-point E:head-fetch-fail
+      unawaited(
+        _debugFeedProbe(
+          'E',
+          'video_feed_screen.dart:_fetchHeadVideo',
+          'fetch_head_video_fail',
+          traceId: headTraceId,
+          data: <String, Object?>{
+            'mode': mode.name,
+            'elapsedMs': stopwatch.elapsedMilliseconds,
+            'error': e.toString(),
+            'errorType': e.runtimeType.toString(),
+          },
+        ),
+      );
+      // #endregion
+    }
   }
 
   Future<void> _fetchVideos({
@@ -173,9 +437,30 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     final targetMode = mode ?? _currentFeedMode;
     if (_fetchingModes.contains(targetMode)) return;
     _fetchingModes.add(targetMode);
+    final fetchTraceId =
+        'feed-fetch-${targetMode.name}-${DateTime.now().microsecondsSinceEpoch}';
+    final fetchStopwatch = Stopwatch()..start();
+    // #region debug-point B:fetch-start
+    unawaited(
+      _debugFeedProbe(
+        'B',
+        'video_feed_screen.dart:_fetchVideos',
+        'fetch_videos_start',
+        traceId: fetchTraceId,
+        data: <String, Object?>{
+          'mode': targetMode.name,
+          'isLoadMore': isLoadMore,
+          'existingCount': _videosByMode[targetMode]!.length,
+        },
+      ),
+    );
+    // #endregion
 
     try {
-      if (!isLoadMore && mounted && targetMode == _currentFeedMode) {
+      if (!isLoadMore &&
+          mounted &&
+          targetMode == _currentFeedMode &&
+          _videosByMode[targetMode]!.isEmpty) {
         setState(() {
           _isLoading = true;
           _errorMessageByMode[targetMode] = null;
@@ -184,43 +469,121 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
 
       final existingVideos = _videosByMode[targetMode]!;
       final offset = isLoadMore ? existingVideos.length : 0;
+      final limit = isLoadMore ? _pagingFetchLimit : _initialFetchLimit;
       final data = await SupabaseService.fetchVideos(
         offset: offset,
-        limit: 10,
+        limit: limit,
         distributionChannel: targetMode.distributionChannel,
       );
+      // #region debug-point B:fetch-success
+      unawaited(
+        _debugFeedProbe(
+          'B',
+          'video_feed_screen.dart:_fetchVideos',
+          'fetch_videos_success',
+          traceId: fetchTraceId,
+          data: <String, Object?>{
+            'mode': targetMode.name,
+            'isLoadMore': isLoadMore,
+            'offset': offset,
+            'resultCount': data.length,
+            'elapsedMs': fetchStopwatch.elapsedMilliseconds,
+          },
+        ),
+      );
+      // #endregion
+
+      var newVideos = data.map(VideoModel.fromRecord).toList();
+      if (!isLoadMore && newVideos.isNotEmpty) {
+        newVideos = <VideoModel>[
+          await _prepareLaunchReadyVideo(newVideos.first),
+          ...newVideos.skip(1),
+        ];
+      }
+      int nextFocusIndex = _currentIndexByMode[targetMode]!;
+      if (targetMode == _currentFeedMode && newVideos.isNotEmpty) {
+        final previewList = isLoadMore
+            ? <VideoModel>[..._videosByMode[targetMode]!, ...newVideos]
+            : newVideos;
+        if (isLoadMore) {
+          nextFocusIndex = _currentIndexByMode[targetMode]!.clamp(
+            0,
+            previewList.length - 1,
+          );
+          VideoEnginePool.instance.focusIndex(
+            nextFocusIndex,
+            previewList.map((video) => video.playbackSource).toList(),
+          );
+        } else {
+          nextFocusIndex = await _resolveInitialRenderableIndex(previewList);
+        }
+      }
 
       if (mounted) {
         setState(() {
           final currentList = _videosByMode[targetMode]!;
           if (!isLoadMore) {
             currentList.clear();
+            _didPrimeMoreByMode[targetMode] = false;
           }
-          if (data.isNotEmpty) {
-            final newVideos = data.map(VideoModel.fromRecord).toList();
+          if (newVideos.isNotEmpty) {
             currentList.addAll(newVideos);
-          } else if (isLoadMore && currentList.isNotEmpty) {
-            // 【终极无底洞策略】：如果云端真的没有更多数据了，我们从已有列表中随机抽取打乱并追加
-            // 永远不让用户看到“到底了”，保持心流不被打断
-            final loopVideos = List<VideoModel>.from(currentList);
-            loopVideos.shuffle();
-            currentList.addAll(loopVideos.take(10));
           }
           _loadedByMode[targetMode] = true;
           if (targetMode == _currentFeedMode) {
+            _currentIndexByMode[targetMode] = nextFocusIndex;
             _isLoading = false;
           }
         });
 
         if (targetMode == _currentFeedMode) {
-          _syncFocusForCurrentFeed(resetToFirst: !isLoadMore);
+          if (!isLoadMore) {
+            _replacePageController(nextFocusIndex);
+          }
+          _syncFocusForCurrentFeed(resetToFirst: false);
+        }
+        if (!isLoadMore && _videosByMode[targetMode]!.isNotEmpty) {
+          unawaited(
+            _persistLaunchSnapshot(
+              targetMode,
+              _videosByMode[targetMode]!.first,
+            ),
+          );
+        }
+        if (!isLoadMore && _videosByMode[targetMode]!.isNotEmpty) {
+          DiskVideoCacheManager.instance.preloadPlaybackSource(
+            _videosByMode[targetMode]!.first.playbackSource,
+          );
+        }
+        if (!isLoadMore &&
+            newVideos.length == limit &&
+            !_didPrimeMoreByMode[targetMode]!) {
+          _didPrimeMoreByMode[targetMode] = true;
+          unawaited(_fetchVideos(isLoadMore: true, mode: targetMode));
         }
       }
     } catch (e) {
+      // #region debug-point E:fetch-fail
+      unawaited(
+        _debugFeedProbe(
+          'E',
+          'video_feed_screen.dart:_fetchVideos',
+          'fetch_videos_fail',
+          traceId: fetchTraceId,
+          data: <String, Object?>{
+            'mode': targetMode.name,
+            'isLoadMore': isLoadMore,
+            'elapsedMs': fetchStopwatch.elapsedMilliseconds,
+            'error': e.toString(),
+            'errorType': e.runtimeType.toString(),
+          },
+        ),
+      );
+      // #endregion
       if (mounted) {
         setState(() {
           if (!isLoadMore && targetMode == _currentFeedMode) {
-            _errorMessageByMode[targetMode] = '云端连接失败，请稍后重试';
+            _errorMessageByMode[targetMode] = e.toString();
             _videosByMode[targetMode]!.clear();
             _isLoading = false;
             _loadedByMode[targetMode] = true;
@@ -254,12 +617,36 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   void _syncFocusForCurrentFeed({bool resetToFirst = false}) {
     if (!widget.isTabActive) {
       VideoEnginePool.instance.freezeAll();
+      // #region debug-point D:sync-focus-frozen
+      unawaited(
+        _debugFeedProbe(
+          'D',
+          'video_feed_screen.dart:_syncFocusForCurrentFeed',
+          'sync_focus_skipped_inactive_tab',
+          data: <String, Object?>{
+            'mode': _currentFeedMode.name,
+          },
+        ),
+      );
+      // #endregion
       return;
     }
 
     final videos = _videosByMode[_currentFeedMode]!;
     if (videos.isEmpty) {
       VideoEnginePool.instance.freezeAll();
+      // #region debug-point D:sync-focus-empty
+      unawaited(
+        _debugFeedProbe(
+          'D',
+          'video_feed_screen.dart:_syncFocusForCurrentFeed',
+          'sync_focus_skipped_empty_feed',
+          data: <String, Object?>{
+            'mode': _currentFeedMode.name,
+          },
+        ),
+      );
+      // #endregion
       return;
     }
 
@@ -267,10 +654,62 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
         ? 0
         : _currentIndexByMode[_currentFeedMode]!.clamp(0, videos.length - 1);
     _currentIndexByMode[_currentFeedMode] = safeIndex;
+    // #region debug-point B:sync-focus
+    unawaited(
+      _debugFeedProbe(
+        'B',
+        'video_feed_screen.dart:_syncFocusForCurrentFeed',
+        'sync_focus_for_feed',
+        data: <String, Object?>{
+          'mode': _currentFeedMode.name,
+          'safeIndex': safeIndex,
+          'videoCount': videos.length,
+          'resetToFirst': resetToFirst,
+          'elapsedMs': _screenStopwatch.elapsedMilliseconds,
+        },
+      ),
+    );
+    // #endregion
     VideoEnginePool.instance.focusIndex(
       safeIndex,
       videos.map((video) => video.playbackSource).toList(),
     );
+  }
+
+  Future<int> _resolveInitialRenderableIndex(
+    List<VideoModel> previewList,
+  ) async {
+    if (previewList.isEmpty) {
+      return 0;
+    }
+    final sources = previewList.map((video) => video.playbackSource).toList();
+    VideoEnginePool.instance.focusIndex(0, sources);
+
+    final startedAt = DateTime.now();
+    final candidateCount = previewList.length.clamp(1, 3);
+    while (DateTime.now().difference(startedAt) < _initialRenderableWait) {
+      for (int index = 0; index < candidateCount; index++) {
+        final sourceKey = previewList[index].playbackSourceKey;
+        if (VideoEnginePool.instance.isVisualReady(index, sourceKey)) {
+          if (index != 0) {
+            VideoEnginePool.instance.focusIndex(index, sources);
+          }
+          return index;
+        }
+      }
+      await Future.delayed(_initialRenderablePoll);
+    }
+
+    for (int index = 0; index < candidateCount; index++) {
+      final sourceKey = previewList[index].playbackSourceKey;
+      if (VideoEnginePool.instance.isVisualReady(index, sourceKey)) {
+        if (index != 0) {
+          VideoEnginePool.instance.focusIndex(index, sources);
+        }
+        return index;
+      }
+    }
+    return 0;
   }
 
   void _replacePageController(int initialPage) {
@@ -303,7 +742,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   void dispose() {
     _publishOverlayStore.removeListener(_handlePublishOverlayChanged);
     _pageController.dispose();
-    VideoEnginePool.instance.dispose();
+    VideoEnginePool.instance.freezeAll();
     super.dispose();
   }
 
@@ -322,7 +761,8 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       _lastHandledPublishJobId = state.jobId;
       _injectPublishedVideo(state.completedVideo!);
     }
-    if (state.stage == PublishOverlayStage.failed && state.pendingVideo != null) {
+    if (state.stage == PublishOverlayStage.failed &&
+        state.pendingVideo != null) {
       _upsertPendingVideo(state.pendingVideo!);
     }
     setState(() {});
@@ -371,6 +811,67 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     if (_currentFeedMode == targetMode) {
       _syncFocusForCurrentFeed();
     }
+  }
+
+  Future<File> _launchSnapshotFile(VideoFeedMode mode) async {
+    final tempDir = await getTemporaryDirectory();
+    final directory = Directory(
+      '${tempDir.path}${Platform.pathSeparator}$_launchSnapshotDirectoryName',
+    );
+    await directory.create(recursive: true);
+    return File(
+      '${directory.path}${Platform.pathSeparator}${mode.name}_head.json',
+    );
+  }
+
+  Future<void> _restoreLaunchSnapshot(VideoFeedMode mode) async {
+    try {
+      final file = await _launchSnapshotFile(mode);
+      if (!await file.exists()) {
+        return;
+      }
+      final content = await file.readAsString();
+      if (content.trim().isEmpty) {
+        return;
+      }
+      final snapshot = await _prepareLaunchReadyVideo(
+        VideoModel.fromJson(
+          Map<String, dynamic>.from(jsonDecode(content) as Map),
+        ),
+        maxWait: const Duration(milliseconds: 500),
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _videosByMode[mode]!
+          ..clear()
+          ..add(snapshot);
+        _loadedByMode[mode] = true;
+        _errorMessageByMode[mode] = null;
+        if (mode == _currentFeedMode) {
+          _currentIndexByMode[mode] = 0;
+          _isLoading = false;
+        }
+      });
+      if (mode == _currentFeedMode) {
+        _replacePageController(0);
+        VideoEnginePool.instance.focusIndex(
+          0,
+          <VideoPlaybackSource>[snapshot.playbackSource],
+        );
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _persistLaunchSnapshot(
+    VideoFeedMode mode,
+    VideoModel headVideo,
+  ) async {
+    try {
+      final file = await _launchSnapshotFile(mode);
+      await file.writeAsString(jsonEncode(headVideo.toJson()), flush: true);
+    } catch (_) {}
   }
 
   void _focusPublishedVideo(PendingPublishedVideo video) {
@@ -438,8 +939,6 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     return VideoModel(
       url: video.primaryPlaybackUrl,
       primaryPlaybackUrl: video.primaryPlaybackUrl,
-      fallbackPlaybackUrl: video.fallbackPlaybackUrl,
-      prefersStreaming: video.prefersStreaming,
       coverUrl: video.coverUrl,
       authorName: video.authorName,
       description: video.description,
@@ -508,91 +1007,24 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
 
   Widget _buildContentLayer() {
     if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: Colors.white),
+      return const SizedBox.expand(
+        child: ColoredBox(color: Colors.black),
       );
     }
 
     if (_errorMessage != null && _videos.isEmpty) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(_errorMessage!, style: const TextStyle(color: Colors.white)),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () => _fetchVideos(mode: _currentFeedMode),
-              style:
-                  ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-              child: const Text(
-                '点击重试 (刷新)',
-                style: TextStyle(color: Colors.white),
-              ),
-            ),
-          ],
+        child: Text(
+          _errorMessage!,
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: Colors.white),
         ),
       );
     }
 
     if (_videos.isEmpty) {
-      final title = _currentFeedMode == VideoFeedMode.portrait
-          ? '暂无竖屏视频'
-          : '暂无横屏视频';
-      final subtitle = _currentFeedMode == VideoFeedMode.portrait
-          ? '数据库还是空的，先上传第一条视频吧'
-          : '横屏专区还没有内容，先上传一条横屏视频吧';
-      return Stack(
-        children: [
-          Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-                const SizedBox(height: 28),
-                OutlinedButton(
-                  onPressed: _openUploadEntry,
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Colors.white, width: 1.5),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 14,
-                    ),
-                  ),
-                  child: const Text(
-                    '上传第一条视频',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Positioned(
-            right: 16,
-            bottom: 118,
-            child: _buildUploadActionButton(),
-          ),
-        ],
+      return const SizedBox.expand(
+        child: ColoredBox(color: Colors.black),
       );
     }
 
@@ -604,6 +1036,21 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
         physics: const NeverScrollableScrollPhysics(),
         itemCount: _videos.length,
         onPageChanged: (index) {
+          // #region debug-point B:page-changed
+          unawaited(
+            _debugFeedProbe(
+              'B',
+              'video_feed_screen.dart:onPageChanged',
+              'feed_page_changed',
+              data: <String, Object?>{
+                'mode': _currentFeedMode.name,
+                'index': index,
+                'videoCount': _videos.length,
+                'elapsedMs': _screenStopwatch.elapsedMilliseconds,
+              },
+            ),
+          );
+          // #endregion
           setState(() {
             _currentIndexByMode[_currentFeedMode] = index;
           });
@@ -636,7 +1083,8 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
 
                     if (_isPaging) return;
 
-                    if (e.scrollDelta.dy > 0 && _currentIndex < _videos.length - 1) {
+                    if (e.scrollDelta.dy > 0 &&
+                        _currentIndex < _videos.length - 1) {
                       _isPaging = true;
                       _pageController.jumpToPage(_currentIndex + 1);
                       _isPaging = false;
@@ -699,40 +1147,6 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     );
   }
 
-  void _openUploadEntry() {
-    if (SupabaseService.currentSession == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先登录后再发布视频')),
-      );
-      return;
-    }
-    context.pushImmersive<void>(
-      builder: (context) => const VideoUploadScreen(),
-    );
-  }
-
-  Widget _buildUploadActionButton() {
-    return GestureDetector(
-      onTap: _openUploadEntry,
-      child: Container(
-        width: 48,
-        height: 48,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.2),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: const Icon(Icons.add, color: Colors.black, size: 32),
-      ),
-    );
-  }
-
   Widget _buildPublishOverlay() {
     final state = _publishOverlayStore.state;
     final isCompleted = state.stage == PublishOverlayStage.completed;
@@ -768,7 +1182,11 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
                     child: isCompleted
                         ? const Icon(Icons.check, color: Colors.black, size: 12)
                         : isFailed
-                            ? const Icon(Icons.close, color: Colors.white, size: 12)
+                            ? const Icon(
+                                Icons.close,
+                                color: Colors.white,
+                                size: 12,
+                              )
                             : const SizedBox(
                                 width: 10,
                                 height: 10,
@@ -783,7 +1201,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
                 Flexible(
                   child: Text(
                     isCompleted
-                        ? '发布完成，下一条就是你的作品'
+                        ? state.message
                         : isFailed
                             ? (state.error ?? state.message)
                             : state.message,
@@ -880,14 +1298,17 @@ class _VideoPlayerItem extends StatefulWidget {
 
 class _VideoPlayerItemState extends State<_VideoPlayerItem> {
   bool _isDragging = false; // 是否正在手动拖拽进度条
+  bool _lastShowVideo = false;
+  bool _didLogInitialTextureState = false;
 
   @override
   Widget build(BuildContext context) {
     // 物理级映射：根据真实 index 获取底层被分配的常驻 C++ 引擎槽位
     final controller = VideoEnginePool.instance.getController(widget.index);
     final player = VideoEnginePool.instance.getPlayer(widget.index);
-    final videoWidth = (widget.video.width ?? (widget.video.isLandscape ? 1920 : 1080))
-        .toDouble();
+    final videoWidth =
+        (widget.video.width ?? (widget.video.isLandscape ? 1920 : 1080))
+            .toDouble();
     final videoHeight =
         (widget.video.height ?? (widget.video.isLandscape ? 1080 : 1920))
             .toDouble();
@@ -909,6 +1330,62 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
                 widget.index,
                 widget.video.playbackSourceKey,
               );
+              if (showVideo && !_lastShowVideo) {
+                // #region debug-point C:first-frame-visible
+                unawaited(
+                  _debugFeedProbe(
+                    'C',
+                    'video_feed_screen.dart:_VideoPlayerItem',
+                    'feed_first_frame_visible',
+                    data: <String, Object?>{
+                      'index': widget.index,
+                      'isActive': widget.isActive,
+                      'sourceKey': widget.video.playbackSourceKey,
+                    },
+                  ),
+                );
+                // #endregion
+              }
+              if (!showVideo && _lastShowVideo) {
+                // #region debug-point E:first-frame-lost
+                unawaited(
+                  _debugFeedProbe(
+                    'E',
+                    'video_feed_screen.dart:_VideoPlayerItem',
+                    'feed_visual_lost',
+                    data: <String, Object?>{
+                      'index': widget.index,
+                      'isActive': widget.isActive,
+                      'sourceKey': widget.video.playbackSourceKey,
+                    },
+                  ),
+                );
+                // #endregion
+              }
+              _lastShowVideo = showVideo;
+              if (!_didLogInitialTextureState && widget.isActive) {
+                _didLogInitialTextureState = true;
+                unawaited(
+                  _debugFeedProbe(
+                    'C',
+                    'video_feed_screen.dart:_VideoPlayerItem',
+                    'active_slot_texture_state',
+                    data: <String, Object?>{
+                      'index': widget.index,
+                      'showVideo': showVideo,
+                      'sourceKey': widget.video.playbackSourceKey,
+                      'videoWidth': videoWidth,
+                      'videoHeight': videoHeight,
+                      'playerPlaying': player.state.playing,
+                      'playerCompleted': player.state.completed,
+                      'playerDurationMs': player.state.duration.inMilliseconds,
+                      'playerPositionMs': player.state.position.inMilliseconds,
+                      'playerWidth': player.state.width,
+                      'playerHeight': player.state.height,
+                    },
+                  ),
+                );
+              }
               if (!showVideo) {
                 return const SizedBox.expand();
               }
@@ -937,7 +1414,8 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.58),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+                  border:
+                      Border.all(color: Colors.white.withValues(alpha: 0.10)),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -980,7 +1458,8 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.62),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+                  border:
+                      Border.all(color: Colors.white.withValues(alpha: 0.10)),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -1009,7 +1488,8 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
                     GestureDetector(
                       onTap: widget.video.publishJobId == null
                           ? null
-                          : () => PublishOverlayStore.instance.retryFailedPublish(
+                          : () =>
+                              PublishOverlayStore.instance.retryFailedPublish(
                                 widget.video.publishJobId!,
                               ),
                       child: Container(
@@ -1068,7 +1548,7 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
                           ? widget.video.pendingMessage
                           : widget.video.isFailed
                               ? '可重试'
-                          : widget.video.primaryDistributionLabel,
+                              : widget.video.primaryDistributionLabel,
                     ),
                   ],
                 ),

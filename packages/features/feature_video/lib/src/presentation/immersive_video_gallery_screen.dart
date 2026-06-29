@@ -205,8 +205,6 @@ class _ImmersiveVideoGalleryScreenState extends State<ImmersiveVideoGalleryScree
 class _GalleryVideoModel {
   const _GalleryVideoModel({
     required this.primaryPlaybackUrl,
-    required this.fallbackPlaybackUrl,
-    required this.prefersStreaming,
     required this.coverUrl,
     required this.authorName,
     required this.description,
@@ -226,8 +224,6 @@ class _GalleryVideoModel {
   });
 
   final String primaryPlaybackUrl;
-  final String? fallbackPlaybackUrl;
-  final bool prefersStreaming;
   final String coverUrl;
   final String authorName;
   final String description;
@@ -247,14 +243,10 @@ class _GalleryVideoModel {
 
   bool get isLandscape => contentOrientation == 'landscape';
 
-  String get playbackSourceKey => prefersStreaming
-      ? '$primaryPlaybackUrl|${fallbackPlaybackUrl ?? ''}'
-      : primaryPlaybackUrl;
+  String get playbackSourceKey => primaryPlaybackUrl;
 
   VideoPlaybackSource get playbackSource => VideoPlaybackSource(
         primaryUrl: primaryPlaybackUrl,
-        fallbackUrl: fallbackPlaybackUrl,
-        prefersStreaming: prefersStreaming,
       );
 
   factory _GalleryVideoModel.fromRecord(PlatformVideoRecord record) {
@@ -267,8 +259,6 @@ class _GalleryVideoModel {
         record.processingStatus == 'failed';
     return _GalleryVideoModel(
       primaryPlaybackUrl: record.primaryPlaybackUrl,
-      fallbackPlaybackUrl: record.fallbackPlaybackUrl,
-      prefersStreaming: record.prefersStreaming,
       coverUrl: record.coverUrl,
       authorName: record.authorName,
       description: record.description,
@@ -333,13 +323,6 @@ class _ImmersiveVideoItemState extends State<_ImmersiveVideoItem> {
                 widget.video.playbackSourceKey,
               );
               if (!showVideo) {
-                if (widget.video.coverUrl.isNotEmpty) {
-                  return Image.network(
-                    widget.video.coverUrl,
-                    fit: fit,
-                    errorBuilder: (_, __, ___) => const SizedBox.expand(),
-                  );
-                }
                 return const SizedBox.expand();
               }
 

@@ -20,8 +20,6 @@ class PendingPublishedVideo {
     required this.jobId,
     required this.authorIdentityId,
     required this.primaryPlaybackUrl,
-    required this.fallbackPlaybackUrl,
-    required this.prefersStreaming,
     required this.coverUrl,
     required this.authorName,
     required this.description,
@@ -41,8 +39,6 @@ class PendingPublishedVideo {
   final String jobId;
   final String authorIdentityId;
   final String primaryPlaybackUrl;
-  final String? fallbackPlaybackUrl;
-  final bool prefersStreaming;
   final String coverUrl;
   final String authorName;
   final String description;
@@ -163,8 +159,6 @@ class PublishOverlayStore extends ChangeNotifier {
       jobId: jobId,
       authorIdentityId: request.activeIdentity.id,
       primaryPlaybackUrl: request.file.uri.toString(),
-      fallbackPlaybackUrl: null,
-      prefersStreaming: false,
       coverUrl: '',
       authorName: authorName,
       description: request.description,
@@ -226,8 +220,6 @@ class PublishOverlayStore extends ChangeNotifier {
       jobId: video.jobId,
       authorIdentityId: video.authorIdentityId,
       primaryPlaybackUrl: video.primaryPlaybackUrl,
-      fallbackPlaybackUrl: video.fallbackPlaybackUrl,
-      prefersStreaming: video.prefersStreaming,
       coverUrl: video.coverUrl,
       authorName: video.authorName,
       description: video.description,
@@ -382,112 +374,6 @@ class PublishOverlayStore extends ChangeNotifier {
         }
       }
 
-      UploadedMedia? streamManifestUpload;
-      String? streamObjectPrefix;
-      final segmentUploadSessionIds = <String>{};
-      final streamManifestFile = result.streamManifestFile;
-      if (streamManifestFile != null && await streamManifestFile.exists()) {
-        _update(jobId, PublishOverlayStage.uploading, '正在上传分片流');
-        final manifestBytes = await streamManifestFile.readAsBytes();
-        final manifestChecksum =
-            SupabaseService.computeSha256Hex(manifestBytes);
-        final manifestContentType = _guessContentType(
-          streamManifestFile.path,
-          fallback: 'application/vnd.apple.mpegurl',
-        );
-        final stableStreamPrefix = 'stream_${manifestChecksum.substring(0, 16)}';
-        streamManifestUpload = await SupabaseService.findReusableUploadedMedia(
-          mediaKind: 'stream',
-          checksumSha256: manifestChecksum,
-        );
-
-        if (streamManifestUpload != null) {
-          streamObjectPrefix = streamManifestUpload.objectPrefix;
-        } else {
-          streamObjectPrefix = stableStreamPrefix;
-          for (var index = 0; index < result.streamSegmentFiles.length; index++) {
-            final segmentFile = result.streamSegmentFiles[index];
-            if (!await segmentFile.exists()) {
-              continue;
-            }
-            final segmentBytes = await segmentFile.readAsBytes();
-            final segmentFileName = segmentFile.uri.pathSegments.last;
-            final segmentContentType = _guessContentType(
-              segmentFile.path,
-              fallback: 'video/mp4',
-            );
-            final segmentChecksum =
-                SupabaseService.computeSha256Hex(segmentBytes);
-            final segmentUploadSession =
-                await SupabaseService.issueUploadSession(
-              mediaKind: 'stream',
-              sourceFilename: segmentFileName,
-              contentType: segmentContentType,
-              fileSizeBytes: segmentBytes.length,
-              ownerIdentityId: request.activeIdentity.id,
-              idempotencyKey:
-                  '${streamObjectPrefix}_segment_${index}_$segmentFileName',
-              preferredObjectPrefix: streamObjectPrefix,
-              uploadPurpose: 'video_publish_stream_segment',
-              checksumSha256: segmentChecksum,
-              expectedWidth: publishedWidth,
-              expectedHeight: publishedHeight,
-              uploadMetadata: {
-                'contentOrientation': outputLayout.contentOrientation,
-                'aspectRatioLabel': outputLayout.aspectRatioLabel,
-                'segmentIndex': index,
-                'segmentFileName': segmentFileName,
-              },
-            );
-            final segmentUpload = await SupabaseService.uploadMedia(
-              fileName: segmentFileName,
-              fileBytes: segmentBytes,
-              mediaKind: 'stream',
-              accessToken: session.accessToken,
-              contentType: segmentContentType,
-              width: publishedWidth,
-              height: publishedHeight,
-              objectPrefix: streamObjectPrefix,
-              uploadSessionId: segmentUploadSession.id,
-            );
-            segmentUploadSessionIds.add(
-              segmentUpload.uploadSessionId ?? segmentUploadSession.id,
-            );
-          }
-
-          final manifestUploadSession = await SupabaseService.issueUploadSession(
-            mediaKind: 'stream',
-            sourceFilename: streamManifestFile.uri.pathSegments.last,
-            contentType: manifestContentType,
-            fileSizeBytes: manifestBytes.length,
-            ownerIdentityId: request.activeIdentity.id,
-            idempotencyKey: '${streamObjectPrefix}_manifest',
-            preferredObjectPrefix: streamObjectPrefix,
-            uploadPurpose: 'video_publish_stream_manifest',
-            checksumSha256: manifestChecksum,
-            expectedWidth: publishedWidth,
-            expectedHeight: publishedHeight,
-            uploadMetadata: {
-              'contentOrientation': outputLayout.contentOrientation,
-              'aspectRatioLabel': outputLayout.aspectRatioLabel,
-              'segmentCount': result.streamSegmentFiles.length,
-            },
-          );
-          streamManifestUpload = await SupabaseService.uploadMedia(
-            fileName: streamManifestFile.uri.pathSegments.last,
-            fileBytes: manifestBytes,
-            mediaKind: 'stream',
-            accessToken: session.accessToken,
-            contentType: manifestContentType,
-            width: publishedWidth,
-            height: publishedHeight,
-            objectPrefix: manifestUploadSession.objectPrefix,
-            uploadSessionId: manifestUploadSession.id,
-          );
-          streamObjectPrefix = manifestUploadSession.objectPrefix;
-        }
-      }
-
       _update(jobId, PublishOverlayStage.publishing, '正在发布到内容流');
       final authorName = request.activeIdentity.displayName.trim().isNotEmpty
           ? request.activeIdentity.displayName
@@ -496,7 +382,6 @@ class PublishOverlayStore extends ChangeNotifier {
       await SupabaseService.publishVideo(
         videoUpload: videoUpload,
         coverUpload: coverUpload,
-        streamManifestUpload: streamManifestUpload,
         description: request.description,
         authorId: user.id,
         authorIdentityId: request.activeIdentity.id,
@@ -506,21 +391,12 @@ class PublishOverlayStore extends ChangeNotifier {
         aspectRatioLabel: outputLayout.aspectRatioLabel,
         width: publishedWidth,
         height: publishedHeight,
-        streamObjectPrefix: streamObjectPrefix,
-        streamFormat: streamManifestUpload == null ? null : 'hls',
       );
-      await SupabaseService.consumeUploadSessions(segmentUploadSessionIds);
 
       final completedVideo = PendingPublishedVideo(
         jobId: jobId,
         authorIdentityId: request.activeIdentity.id,
-        primaryPlaybackUrl:
-            streamManifestUpload?.publicUrl.isNotEmpty == true
-                ? streamManifestUpload!.publicUrl
-                : videoUpload.publicUrl,
-        fallbackPlaybackUrl:
-            streamManifestUpload == null ? null : videoUpload.publicUrl,
-        prefersStreaming: streamManifestUpload != null,
+        primaryPlaybackUrl: videoUpload.publicUrl,
         coverUrl: coverUpload?.publicUrl ?? '',
         authorName: authorName,
         description: request.description,
@@ -529,8 +405,7 @@ class PublishOverlayStore extends ChangeNotifier {
         contentOrientation: outputLayout.contentOrientation,
         distributionChannelLabel:
             outputLayout.contentOrientation == 'landscape' ? '横屏' : '推荐',
-        primaryDistributionLabel:
-            streamManifestUpload == null ? 'MP4直出' : 'HLS主链',
+        primaryDistributionLabel: 'HEVC直出',
         statusLabel: '已发布',
         isPending: false,
         isFailed: false,
@@ -555,8 +430,6 @@ class PublishOverlayStore extends ChangeNotifier {
               jobId: _state.pendingVideo!.jobId,
               authorIdentityId: _state.pendingVideo!.authorIdentityId,
               primaryPlaybackUrl: _state.pendingVideo!.primaryPlaybackUrl,
-              fallbackPlaybackUrl: _state.pendingVideo!.fallbackPlaybackUrl,
-              prefersStreaming: _state.pendingVideo!.prefersStreaming,
               coverUrl: _state.pendingVideo!.coverUrl,
               authorName: _state.pendingVideo!.authorName,
               description: _state.pendingVideo!.description,
@@ -585,7 +458,6 @@ class PublishOverlayStore extends ChangeNotifier {
 
   static String _guessContentType(String path, {required String fallback}) {
     final lowerPath = path.toLowerCase();
-    if (lowerPath.endsWith('.m3u8')) return 'application/vnd.apple.mpegurl';
     if (lowerPath.endsWith('.webp')) return 'image/webp';
     if (lowerPath.endsWith('.jpg') || lowerPath.endsWith('.jpeg')) {
       return 'image/jpeg';

@@ -18,16 +18,12 @@ class VideoProcessResult {
   final File? coverFile;
   final int? width;
   final int? height;
-  final File? streamManifestFile;
-  final List<File> streamSegmentFiles;
 
   VideoProcessResult(
     this.videoFile,
     this.coverFile, {
     this.width,
     this.height,
-    this.streamManifestFile,
-    this.streamSegmentFiles = const [],
   });
 }
 
@@ -45,14 +41,14 @@ enum VideoOutputLayout {
   portrait(
     contentOrientation: 'portrait',
     aspectRatioLabel: '9:16',
-    targetWidth: 1080,
-    targetHeight: 1920,
+    targetWidth: 1206,
+    targetHeight: 2622,
   ),
   landscape(
     contentOrientation: 'landscape',
     aspectRatioLabel: '16:9',
-    targetWidth: 1920,
-    targetHeight: 1080,
+    targetWidth: 2622,
+    targetHeight: 1206,
   );
 
   const VideoOutputLayout({
@@ -132,8 +128,7 @@ class VideoCropSelection {
 
 /// 端侧视频处理器：15秒截取、帧级封面提取与硬件加速转码
 class VideoProcessor {
-  static const String _streamManifestFileName = 'stream.m3u8';
-  static const String _streamInitFileName = 'init.mp4';
+  static const int _distributionFrameRate = 30;
   static const List<String> _windowsFfmpegCandidates = <String>[
     r'C:\ffmpeg\bin\ffmpeg.exe',
     r'C:\Program Files\ffmpeg\bin\ffmpeg.exe',
@@ -279,7 +274,7 @@ class VideoProcessor {
     return frames;
   }
 
-  /// 将用户选定的视频进行极限压缩，转码为 H.264，并抽取指定时间点的封面
+  /// 将用户选定的视频转码为单一 HEVC MP4 分发资产，并抽取指定时间点的 WebP 封面
   /// [sourcePath]: 原始视频路径 (可能是从 video_editor 截取后传过来的中间路径)
   /// [startTimeSeconds]: 截取开始时间
   /// [coverTimeSeconds]: 用户选定作为封面的时间点
@@ -297,8 +292,6 @@ class VideoProcessor {
 
     final targetVideoPath = '${tempDir.path}/${timestamp}_compressed.mp4';
     final targetCoverPath = '${tempDir.path}/${timestamp}_cover.webp';
-    final streamDir = Directory('${tempDir.path}/${timestamp}_hls');
-
     // Windows 环境下调用系统中可能存在的 ffmpeg
     if (Platform.isWindows) {
       debugPrint('Windows 环境下尝试调用本地 FFmpeg 进程进行转码...');
@@ -308,9 +301,9 @@ class VideoProcessor {
           debugPrint('==================================================================');
           debugPrint('【前置条件缺失】: 当前 Windows 设备未发现可执行 FFmpeg。');
           debugPrint('请安装 FFmpeg、设置 FFMPEG_PATH，或将 ffmpeg.exe 放到应用约定目录。');
-          debugPrint('当前将回退到原片直传，HLS 主链与封面抽帧不会生成。');
+          debugPrint('当前将终止发布，避免生成不符合规范的分发资产。');
           debugPrint('==================================================================');
-          return VideoProcessResult(File(sourcePath), null);
+          return null;
         }
 
         final targetVideoFilter = _buildTargetVideoFilter(
@@ -318,18 +311,25 @@ class VideoProcessor {
           cropSelection: cropSelection,
         );
 
-        // Windows 的转码参数，同样强力注入 faststart
+        // 单一分发资产：HEVC Main10 + 30fps + faststart，兼顾观感、体积与首播速度
         final args = [
-          '-y', // 覆盖输出文件
+          '-y',
           '-ss', '$startTimeSeconds',
           '-i', sourcePath,
           '-t', '$maxDurationSeconds',
           '-vf', targetVideoFilter,
-          '-c:v', 'libx264',
-          '-crf', '28',
-          '-preset', 'veryfast',
+          '-r', '$_distributionFrameRate',
+          '-c:v', 'libx265',
+          '-pix_fmt', 'yuv420p10le',
+          '-tag:v', 'hvc1',
+          '-preset', 'faster',
+          '-crf', '24',
+          '-g', '$_distributionFrameRate',
+          '-keyint_min', '$_distributionFrameRate',
+          '-x265-params',
+          'keyint=$_distributionFrameRate:min-keyint=$_distributionFrameRate:scenecut=0',
           '-c:a', 'aac',
-          '-b:a', '128k',
+          '-b:a', '96k',
           '-movflags', 'faststart',
           targetVideoPath,
         ];
@@ -338,11 +338,10 @@ class VideoProcessor {
         if (result.exitCode != 0) {
           debugPrint('Windows FFmpeg 转码失败: ${result.stderr}');
           debugPrint('==================================================================');
-          debugPrint('【前置条件缺失】: FFmpeg 转码失败，当前回退为原片直传。');
-          debugPrint('请检查 FFmpeg 安装状态、编码器能力与执行权限。');
+          debugPrint('【前置条件缺失】: FFmpeg HEVC 转码失败。');
+          debugPrint('请检查 FFmpeg 的 libx265 能力、安装状态与执行权限。');
           debugPrint('==================================================================');
-          await Future.delayed(const Duration(seconds: 1));
-          return VideoProcessResult(File(sourcePath), null);
+          return null;
         }
 
         // 抽取封面
@@ -357,34 +356,19 @@ class VideoProcessor {
         ];
         await Process.run(ffmpegCommand, coverArgs);
         
-        final streamPackage = await _buildWindowsHlsPackage(
-          ffmpegCommand: ffmpegCommand,
-          sourceVideoPath: targetVideoPath,
-          streamDir: streamDir,
-        );
-
         return VideoProcessResult(
           File(targetVideoPath),
           File(targetCoverPath),
           width: outputLayout.targetWidth,
           height: outputLayout.targetHeight,
-          streamManifestFile: streamPackage?.manifestFile,
-          streamSegmentFiles: streamPackage?.segmentFiles ?? const [],
         );
       } catch (e) {
         debugPrint('无法调用 FFmpeg: $e');
-        return VideoProcessResult(File(sourcePath), null);
+        return null;
       }
     }
 
-    // 1. FFmpeg 命令构建：强制转码 H.264，限制时长，压榨体积，【核心：注入 faststart】
-    // -ss : 跳转到指定截取开始时间
-    // -t 15 : 强制最大 15 秒
-    // -vf ... : 按用户最终选择输出竖屏或横屏母版，保证推荐流与横屏区彻底分流
-    // -c:v libx264 : 使用 H.264 编码 (保证全平台兼容)
-    // -crf 28 : 控制画质和体积平衡，数字越大体积越小画质越低
-    // -preset veryfast : 转码速度优先
-    // -movflags faststart : 【降维打击核心】将 moov atom 移动到文件头部，实现真正的“边下边播”！
+    // 单一分发资产：HEVC Main10 + 30fps + faststart
     final targetVideoFilter = _buildTargetVideoFilter(
       outputLayout: outputLayout,
       cropSelection: cropSelection,
@@ -392,7 +376,12 @@ class VideoProcessor {
     final videoCmd =
         '-ss $startTimeSeconds -i "$sourcePath" -t $maxDurationSeconds '
         '-vf $targetVideoFilter '
-        '-c:v libx264 -crf 28 -preset veryfast -c:a aac -b:a 128k '
+        '-r $_distributionFrameRate '
+        '-c:v libx265 -pix_fmt yuv420p10le -tag:v hvc1 '
+        '-preset faster -crf 24 '
+        '-g $_distributionFrameRate -keyint_min $_distributionFrameRate '
+        '-x265-params "keyint=$_distributionFrameRate:min-keyint=$_distributionFrameRate:scenecut=0" '
+        '-c:a aac -b:a 96k '
         '-movflags faststart "$targetVideoPath"';
 
     // 执行视频转码
@@ -423,18 +412,11 @@ class VideoProcessor {
       return null;
     }
 
-    final streamPackage = await _buildMobileHlsPackage(
-      sourceVideoPath: targetVideoPath,
-      streamDir: streamDir,
-    );
-
     return VideoProcessResult(
       File(targetVideoPath),
       File(targetCoverPath),
       width: outputLayout.targetWidth,
       height: outputLayout.targetHeight,
-      streamManifestFile: streamPackage?.manifestFile,
-      streamSegmentFiles: streamPackage?.segmentFiles ?? const [],
     );
   }
 
@@ -461,98 +443,4 @@ class VideoProcessor {
     filters.add('setsar=1');
     return filters.join(',');
   }
-
-
-  static Future<_StreamPackage?> _buildWindowsHlsPackage({
-    required String ffmpegCommand,
-    required String sourceVideoPath,
-    required Directory streamDir,
-  }) async {
-    await streamDir.create(recursive: true);
-    final manifestPath = '${streamDir.path}/$_streamManifestFileName';
-    final segmentPattern = '${streamDir.path}/seg_%05d.m4s';
-
-    final args = [
-      '-y',
-      '-i',
-      sourceVideoPath,
-      '-c',
-      'copy',
-      '-f',
-      'hls',
-      '-hls_time',
-      '1',
-      '-hls_playlist_type',
-      'vod',
-      '-hls_segment_type',
-      'fmp4',
-      '-hls_fmp4_init_filename',
-      _streamInitFileName,
-      '-hls_flags',
-      'independent_segments',
-      '-hls_segment_filename',
-      segmentPattern,
-      manifestPath,
-    ];
-
-    final result = await Process.run(ffmpegCommand, args);
-    if (result.exitCode != 0) {
-      debugPrint('Windows HLS 打包失败: ${result.stderr}');
-      return null;
-    }
-
-    return _readStreamPackage(streamDir);
-  }
-
-  static Future<_StreamPackage?> _buildMobileHlsPackage({
-    required String sourceVideoPath,
-    required Directory streamDir,
-  }) async {
-    await streamDir.create(recursive: true);
-    final manifestPath = '${streamDir.path}/$_streamManifestFileName';
-    final segmentPattern = '${streamDir.path}/seg_%05d.m4s';
-    final hlsCmd =
-        '-i "$sourceVideoPath" -c copy -f hls -hls_time 1 '
-        '-hls_playlist_type vod -hls_segment_type fmp4 '
-        '-hls_fmp4_init_filename $_streamInitFileName '
-        '-hls_flags independent_segments '
-        '-hls_segment_filename "$segmentPattern" "$manifestPath"';
-
-    final session = await FFmpegKit.execute(hlsCmd);
-    final returnCode = await session.getReturnCode();
-    if (!ReturnCode.isSuccess(returnCode)) {
-      return null;
-    }
-
-    return _readStreamPackage(streamDir);
-  }
-
-  static _StreamPackage? _readStreamPackage(Directory streamDir) {
-    final manifestFile = File('${streamDir.path}/$_streamManifestFileName');
-    if (!manifestFile.existsSync()) {
-      return null;
-    }
-
-    final segmentFiles = streamDir
-        .listSync()
-        .whereType<File>()
-        .where((file) => file.path != manifestFile.path)
-        .toList()
-      ..sort((a, b) => a.path.compareTo(b.path));
-
-    return _StreamPackage(
-      manifestFile: manifestFile,
-      segmentFiles: segmentFiles,
-    );
-  }
-}
-
-class _StreamPackage {
-  final File manifestFile;
-  final List<File> segmentFiles;
-
-  const _StreamPackage({
-    required this.manifestFile,
-    required this.segmentFiles,
-  });
 }

@@ -1,12 +1,12 @@
 const MEDIA_RULES = {
   video: {
     maxBytes: 250 * 1024 * 1024,
-    allowedContentTypes: new Set(['video/mp4', 'video/quicktime']),
+    allowedContentTypes: new Set(['video/mp4']),
     defaultExtension: 'mp4',
   },
   cover: {
     maxBytes: 15 * 1024 * 1024,
-    allowedContentTypes: new Set(['image/webp', 'image/jpeg', 'image/png']),
+    allowedContentTypes: new Set(['image/webp']),
     defaultExtension: 'webp',
   },
   avatar: {
@@ -14,26 +14,14 @@ const MEDIA_RULES = {
     allowedContentTypes: new Set(['image/webp', 'image/jpeg', 'image/png']),
     defaultExtension: 'webp',
   },
-  stream: {
-    maxBytes: 250 * 1024 * 1024,
-    allowedContentTypes: new Set([
-      'application/vnd.apple.mpegurl',
-      'application/x-mpegURL',
-      'video/mp4',
-      'application/octet-stream',
-    ]),
-    defaultExtension: 'm3u8',
-  },
 };
 
-const TARGET_VIDEO_WIDTH = 1080;
-const TARGET_VIDEO_HEIGHT = 1920;
+const TARGET_PORTRAIT_WIDTH = 1206;
+const TARGET_PORTRAIT_HEIGHT = 2622;
+const TARGET_LANDSCAPE_WIDTH = 2622;
+const TARGET_LANDSCAPE_HEIGHT = 1206;
 
 function getCacheControl(objectKey) {
-  if (objectKey.includes('/stream/')) {
-    return 'public, max-age=31536000, immutable';
-  }
-
   if (objectKey.includes('/cover/')) {
     return 'public, max-age=604800, stale-while-revalidate=86400';
   }
@@ -47,6 +35,13 @@ function getCacheControl(objectKey) {
   }
 
   return 'public, max-age=3600';
+}
+
+function isSupportedDistributionSize(width, height) {
+  return (
+    (width === TARGET_PORTRAIT_WIDTH && height === TARGET_PORTRAIT_HEIGHT) ||
+    (width === TARGET_LANDSCAPE_WIDTH && height === TARGET_LANDSCAPE_HEIGHT)
+  );
 }
 
 function toHex(buffer) {
@@ -346,9 +341,9 @@ export default {
     }
 
     if (
-      (mediaKind === 'video' || mediaKind === 'cover' || mediaKind === 'stream') &&
+      (mediaKind === 'video' || mediaKind === 'cover') &&
       (parsedWidth !== null || parsedHeight !== null) &&
-      (parsedWidth !== TARGET_VIDEO_WIDTH || parsedHeight !== TARGET_VIDEO_HEIGHT)
+      !isSupportedDistributionSize(parsedWidth, parsedHeight)
     ) {
       return new Response('Unsupported media dimensions', {
         status: 400,
@@ -389,11 +384,10 @@ export default {
           height: parsedHeight ? `${parsedHeight}` : '',
           objectPrefix: safePrefix,
           processingProfile:
-            mediaKind === 'stream'
-              ? 'hls-single-1080x1920-v1'
-              : parsedWidth === TARGET_VIDEO_WIDTH &&
-                    parsedHeight === TARGET_VIDEO_HEIGHT
-                ? 'master-1080x1920-v1'
+            mediaKind === 'video'
+              ? 'hevc_primary_distribution'
+              : mediaKind === 'cover'
+                ? 'distribution_cover_webp'
                 : 'passthrough',
         },
       });

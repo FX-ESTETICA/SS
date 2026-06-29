@@ -206,6 +206,36 @@ class SupabaseService {
     }
   }
 
+  static Future<PlatformVideoRecord?> fetchHeadVideo({
+    String? distributionChannel,
+  }) async {
+    try {
+      var query = client
+          .from('videos')
+          .select()
+          .eq('processing_status', 'ready')
+          .eq('workflow_status', 'ready')
+          .eq('moderation_status', 'approved')
+          .eq('distribution_status', 'ready')
+          .eq('lifecycle_status', 'active');
+
+      if (distributionChannel != null && distributionChannel.isNotEmpty) {
+        query = query.eq('distribution_channel', distributionChannel);
+      }
+
+      final data = await query
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      if (data == null) {
+        return null;
+      }
+      return PlatformVideoRecord.fromJson(Map<String, dynamic>.from(data));
+    } catch (e) {
+      rethrow;
+    }
+  }
+
   /// 获取我发布的视频
   static Future<List<PlatformVideoRecord>> fetchMyVideos(
     String authorId, {
@@ -405,7 +435,6 @@ class SupabaseService {
   static Future<void> publishVideo({
     required UploadedMedia videoUpload,
     UploadedMedia? coverUpload,
-    UploadedMedia? streamManifestUpload,
     required String description,
     required String authorId,
     required String authorIdentityId,
@@ -415,21 +444,16 @@ class SupabaseService {
     required String aspectRatioLabel,
     int? width,
     int? height,
-    String? streamObjectPrefix,
-    String? streamFormat,
   }) async {
     final finalDescription = description.trim();
     final now = DateTime.now().toUtc();
     final publishedAt = now.toIso8601String();
-    final hasStream = streamManifestUpload != null;
     final distributionChannel = contentOrientation == 'landscape'
         ? 'landscape'
         : 'recommendation';
-    final primaryDistributionKind = hasStream ? 'hls' : 'direct_file';
-    final videoAssetRole = hasStream ? 'fallback_playback' : 'playback_file';
-    final videoProcessingProfile = hasStream
-        ? 'mp4_fallback'
-        : 'mp4_primary_distribution';
+    const primaryDistributionKind = 'direct_file';
+    const videoAssetRole = 'playback_file';
+    const videoProcessingProfile = 'hevc_primary_distribution';
 
     final dbVideoData = {
       'author_id': authorId,
@@ -438,9 +462,6 @@ class SupabaseService {
       'video_object_key': videoUpload.objectKey,
       'cover_url': coverUpload?.publicUrl ?? '',
       'cover_object_key': coverUpload?.objectKey,
-      'stream_url': streamManifestUpload?.publicUrl,
-      'stream_object_prefix': streamObjectPrefix,
-      'stream_format': streamFormat,
       'description': finalDescription,
       'author_name': authorName,
       'created_at': publishedAt,
@@ -495,7 +516,7 @@ class SupabaseService {
           'width': width ?? videoUpload.width,
           'height': height ?? videoUpload.height,
           'distributionChannel': distributionChannel,
-          'isPrimaryDistribution': !hasStream,
+          'isPrimaryDistribution': true,
         },
         'retention_class': 'standard',
         'last_verified_at': publishedAt,
@@ -534,41 +555,6 @@ class SupabaseService {
       });
     }
 
-    if (streamManifestUpload != null) {
-      mediaRecords.add({
-        'owner_id': authorId,
-        'owner_identity_id': authorIdentityId,
-        'entity_type': 'video',
-        'entity_id': videoId,
-        'media_kind': 'stream_manifest',
-        'bucket_name': 'zhixuan-media',
-        'object_key': streamManifestUpload.objectKey,
-        'public_url': streamManifestUpload.publicUrl,
-        'mime_type': streamManifestUpload.contentType,
-        'bytes': streamManifestUpload.bytes,
-        'checksum_sha256': streamManifestUpload.checksumSha256,
-        'source_filename': streamManifestUpload.sourceFilename,
-        'status': 'ready',
-        'asset_role': 'stream_manifest',
-        'asset_scope': 'distribution',
-        'asset_family': 'playback',
-        'storage_tier': 'hot',
-        'availability_status': 'online',
-        'processing_profile': 'single_quality_hls_manifest',
-        'asset_metadata': {
-          'contentOrientation': contentOrientation,
-          'aspectRatioLabel': aspectRatioLabel,
-          'width': width ?? streamManifestUpload.width,
-          'height': height ?? streamManifestUpload.height,
-          'streamObjectPrefix': streamObjectPrefix,
-          'streamFormat': streamFormat ?? 'hls',
-          'isPrimaryDistribution': true,
-        },
-        'retention_class': 'standard',
-        'last_verified_at': publishedAt,
-      });
-    }
-
     await client.from('media_assets').insert(mediaRecords);
 
     await client.from('video_pipeline_jobs').insert({
@@ -585,13 +571,12 @@ class SupabaseService {
         'contentOrientation': contentOrientation,
         'aspectRatioLabel': aspectRatioLabel,
         'hasCover': coverUpload != null,
-        'hasStream': hasStream,
-        'streamFormat': streamFormat,
+        'hasStream': false,
+        'videoCodec': 'hevc',
       },
       'output_payload': {
         'videoObjectKey': videoUpload.objectKey,
         'coverObjectKey': coverUpload?.objectKey,
-        'streamObjectPrefix': streamObjectPrefix,
         'primaryDistributionKind': primaryDistributionKind,
         'distributionChannel': distributionChannel,
       },
@@ -600,7 +585,6 @@ class SupabaseService {
     await consumeUploadSessions([
       videoUpload.uploadSessionId,
       coverUpload?.uploadSessionId,
-      streamManifestUpload?.uploadSessionId,
     ]);
   }
 
@@ -903,8 +887,6 @@ class SupabaseService {
 
   static List<String> _candidateAssetKindsForUploadKind(String mediaKind) {
     switch (mediaKind) {
-      case 'stream':
-        return const ['stream_manifest'];
       case 'video':
         return const ['video'];
       case 'cover':

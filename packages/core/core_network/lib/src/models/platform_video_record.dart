@@ -7,11 +7,8 @@ class PlatformVideoRecord {
     required this.description,
     required this.videoUrl,
     required this.coverUrl,
-    required this.streamUrl,
-    required this.streamFormat,
     required this.videoObjectKey,
     required this.coverObjectKey,
-    required this.streamObjectPrefix,
     required this.contentOrientation,
     required this.aspectRatioLabel,
     required this.workflowStatus,
@@ -40,11 +37,8 @@ class PlatformVideoRecord {
   final String description;
   final String videoUrl;
   final String coverUrl;
-  final String streamUrl;
-  final String streamFormat;
   final String videoObjectKey;
   final String? coverObjectKey;
-  final String? streamObjectPrefix;
   final String contentOrientation;
   final String aspectRatioLabel;
   final String workflowStatus;
@@ -67,23 +61,8 @@ class PlatformVideoRecord {
 
   bool get isLandscape => contentOrientation == 'landscape';
 
-  bool get prefersStreaming =>
-      primaryDistributionKind == 'hls' &&
-      streamUrl.isNotEmpty &&
-      streamFormat == 'hls';
-
   String get primaryPlaybackUrl {
-    if (prefersStreaming) {
-      return streamUrl;
-    }
     return videoUrl;
-  }
-
-  String? get fallbackPlaybackUrl {
-    if (prefersStreaming && videoUrl.isNotEmpty) {
-      return videoUrl;
-    }
-    return null;
   }
 
   bool get isReadyForPlayback =>
@@ -109,15 +88,11 @@ class PlatformVideoRecord {
 
   String get primaryDistributionLabel {
     switch (primaryDistributionKind) {
-      case 'hls':
-        return 'HLS主链';
-      case 'cmaf':
-        return 'CMAF主链';
-      case 'dash':
-        return 'DASH主链';
+      case 'hevc_file':
+        return 'HEVC直出';
       case 'direct_file':
       default:
-        return 'MP4直出';
+        return 'HEVC直出';
     }
   }
 
@@ -166,11 +141,8 @@ class PlatformVideoRecord {
       description: json['description'] as String? ?? '',
       videoUrl: json['video_url'] as String? ?? '',
       coverUrl: json['cover_url'] as String? ?? '',
-      streamUrl: json['stream_url'] as String? ?? '',
-      streamFormat: json['stream_format'] as String? ?? '',
       videoObjectKey: json['video_object_key'] as String? ?? '',
       coverObjectKey: json['cover_object_key'] as String?,
-      streamObjectPrefix: json['stream_object_prefix'] as String?,
       contentOrientation: _resolveContentOrientation(json),
       aspectRatioLabel: json['aspect_ratio_label'] as String? ?? '',
       workflowStatus: json['workflow_status'] as String? ?? 'uploaded',

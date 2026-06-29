@@ -4,7 +4,7 @@ import 'package:core_media/core_media.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('Windows bundled FFmpeg can transcode and package HLS output', () async {
+  test('Windows bundled FFmpeg can transcode HEVC MP4 and WebP cover', () async {
     if (!Platform.isWindows) {
       return;
     }
@@ -75,8 +75,10 @@ void main() {
       expect(result, isNotNull);
       expect(result!.videoFile.existsSync(), isTrue);
       expect(result.coverFile?.existsSync(), isTrue);
-      expect(result.streamManifestFile?.existsSync(), isTrue);
-      expect(result.streamSegmentFiles.isNotEmpty, isTrue);
+      expect(result.videoFile.path.toLowerCase().endsWith('.mp4'), isTrue);
+      expect(result.coverFile?.path.toLowerCase().endsWith('.webp'), isTrue);
+      expect(result.width, VideoOutputLayout.portrait.targetWidth);
+      expect(result.height, VideoOutputLayout.portrait.targetHeight);
     } finally {
       Directory.current = originalCwd.path;
       if (tempDir.existsSync()) {

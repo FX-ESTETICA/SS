@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:collection';
 import 'package:dio/dio.dart';
@@ -25,10 +26,23 @@ class DiskVideoCacheManager {
   static const int maxCacheBytes = 600 * 1024 * 1024; // 按总字节治理，避免大文件挤爆磁盘
 
   bool _isInitialized = false;
+  Future<void>? _initializingFuture;
 
   /// 初始化缓存引擎并恢复 LRU 状态
   Future<void> initialize() async {
     if (_isInitialized) return;
+    if (_initializingFuture != null) {
+      return _initializingFuture!;
+    }
+    _initializingFuture = _initializeInternal();
+    try {
+      await _initializingFuture;
+    } finally {
+      _initializingFuture = null;
+    }
+  }
+
+  Future<void> _initializeInternal() async {
     try {
       final tempDir = await getTemporaryDirectory();
       _cacheDir = Directory('${tempDir.path}/video_cache_v2'); // 升级目录，废弃旧的无序缓存
@@ -64,9 +78,11 @@ class DiskVideoCacheManager {
     return '${_cacheDir!.path}/$fileName';
   }
 
-  bool _isStreamManifestUrl(String url) {
-    final lowerUrl = url.toLowerCase();
-    return lowerUrl.contains('.m3u8');
+  bool hasCachedUrl(String url) {
+    if (!_isInitialized || _cacheDir == null) return false;
+    if (url.startsWith('file://')) return true;
+    final filePath = _getFilePath(url);
+    return _lruCache.containsKey(filePath) && File(filePath).existsSync();
   }
 
   /// 预加载调度入口 (Fire and Forget)
@@ -80,21 +96,33 @@ class DiskVideoCacheManager {
   void preloadPlaybackSources(List<VideoPlaybackSource> sources) {
     if (!_isInitialized || _cacheDir == null) return;
     for (final source in sources) {
-      if (source.prefersStreaming) {
-        final fallbackUrl = source.fallbackUrl;
-        if (fallbackUrl != null && fallbackUrl.isNotEmpty) {
-          _download(fallbackUrl);
-        }
-        continue;
-      }
       _download(source.primaryUrl);
     }
+  }
+
+  void preloadPlaybackSource(VideoPlaybackSource source) {
+    if (!_isInitialized || _cacheDir == null) return;
+    _download(source.primaryUrl);
+  }
+
+  Future<String> prepareLaunchPlayableUrl(
+    VideoPlaybackSource source, {
+    Duration maxWait = const Duration(milliseconds: 900),
+  }) async {
+    await initialize();
+    if (source.primaryUrl.startsWith('file://')) {
+      return source.primaryUrl;
+    }
+    if (hasCachedUrl(source.primaryUrl)) {
+      return getPlayableUrl(source.primaryUrl);
+    }
+    unawaited(_download(source.primaryUrl));
+    return source.primaryUrl;
   }
 
   /// 执行静默下载写入
   Future<void> _download(String url) async {
     if (url.startsWith('file://') || url.startsWith('assets/')) return;
-    if (_isStreamManifestUrl(url)) return;
     
     final filePath = _getFilePath(url);
     
@@ -135,7 +163,6 @@ class DiskVideoCacheManager {
   /// 拦截器：向上层返回可直接播放的 URL，并刷新 LRU 权重
   String getPlayableUrl(String originalUrl) {
     if (!_isInitialized || originalUrl.startsWith('file://')) return originalUrl;
-    if (_isStreamManifestUrl(originalUrl)) return originalUrl;
     
     final filePath = _getFilePath(originalUrl);
     if (_lruCache.containsKey(filePath) && File(filePath).existsSync()) {
@@ -148,7 +175,7 @@ class DiskVideoCacheManager {
       return 'file:///$filePath';
     }
     
-    // 兜底降级：如果用户滑得太快（预加载没赶上），走普通网络流
+    // 如果预加载尚未完成，继续使用真实远端地址。
     return originalUrl;
   }
   

@@ -359,13 +359,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       authorIdentityId: video.authorIdentityId,
       authorName: video.authorName,
       description: video.description,
-      videoUrl: video.fallbackPlaybackUrl ?? video.primaryPlaybackUrl,
+      videoUrl: video.primaryPlaybackUrl,
       coverUrl: video.coverUrl,
-      streamUrl: video.prefersStreaming ? video.primaryPlaybackUrl : '',
-      streamFormat: video.prefersStreaming ? 'hls' : '',
       videoObjectKey: '',
       coverObjectKey: null,
-      streamObjectPrefix: null,
       contentOrientation: video.contentOrientation,
       aspectRatioLabel:
           video.contentOrientation == 'landscape' ? '16:9' : '9:16',
@@ -384,7 +381,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           video.contentOrientation == 'landscape'
               ? 'landscape'
               : 'recommendation',
-      primaryDistributionKind: video.prefersStreaming ? 'hls' : 'direct_file',
+      primaryDistributionKind: 'direct_file',
       processingStatus: isPending
           ? 'processing'
           : isFailed
@@ -688,10 +685,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     height: 100,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      image: DecorationImage(
-                        image: NetworkImage(avatarUrl),
-                        fit: BoxFit.cover,
-                      ),
+                      image: avatarUrl == null
+                          ? null
+                          : DecorationImage(
+                              image: NetworkImage(avatarUrl),
+                              fit: BoxFit.cover,
+                            ),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.8),
@@ -1054,11 +1053,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     Image.network(
                       video.coverUrl,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _buildProfileVideoPlaceholder(),
                     )
                   else
-                    _buildProfileVideoPlaceholder(),
+                    const SizedBox.expand(),
                   Positioned(
                     top: 8,
                     left: 8,
@@ -1197,19 +1194,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           color: Colors.white,
           fontSize: 10,
           fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildProfileVideoPlaceholder() {
-    return Container(
-      color: Colors.black,
-      child: const Center(
-        child: Icon(
-          Icons.video_library_outlined,
-          color: Colors.white,
-          size: 48,
         ),
       ),
     );

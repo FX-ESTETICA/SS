@@ -20,6 +20,7 @@ class VideoUploadScreen extends StatefulWidget {
 
 class _VideoUploadScreenState extends State<VideoUploadScreen> {
   static const String _debugRunId = 'post-fix';
+  static const String _debugSessionId = 'upload-camera-dead';
   CameraController? _cameraController;
   List<CameraDescription>? _cameras;
   int _selectedCameraIndex = 0;
@@ -40,9 +41,9 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
   }) async {
     try {
       var serverUrl = 'http://127.0.0.1:7777/event';
-      var sessionId = 'camera-native-validation';
+      var sessionId = _debugSessionId;
       final envFile = File(
-        r'c:\Users\49975\Desktop\智选\.dbg\camera-native-validation.env',
+        r'c:\Users\49975\Desktop\智选\.dbg\upload-camera-dead.env',
       );
       if (await envFile.exists()) {
         final content = await envFile.readAsString();
@@ -84,13 +85,8 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
         overlays: const [],
       ),
     );
-    _showCameraPrimer = !CameraWarmupService.instance.hasUserActivatedCamera &&
-        !CameraWarmupService.instance.hasWarmController;
-    if (!_showCameraPrimer) {
-      _initCamera();
-    } else {
-      _isInitializingCamera = false;
-    }
+    _showCameraPrimer = false;
+    unawaited(_initCamera(userInitiated: true));
   }
 
   Future<void> _initCamera({bool userInitiated = false}) async {
@@ -193,13 +189,29 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
         setState(() {
           _cameraError = '摄像头初始化失败';
           _isInitializingCamera = false;
-          _showCameraPrimer = true;
+          _showCameraPrimer = false;
         });
       }
     }
   }
 
   Future<void> _beginCameraFlow() async {
+    // #region debug-point H2:continue-button-tapped
+    unawaited(
+      _reportDebugEvent(
+        hypothesisId: 'H2',
+        location: 'video_upload_screen.dart:_beginCameraFlow',
+        msg: 'continue button tapped',
+        data: {
+          'showCameraPrimer': _showCameraPrimer,
+          'isInitializingCamera': _isInitializingCamera,
+          'hasWarmController': CameraWarmupService.instance.hasWarmController,
+          'hasUserActivatedCamera':
+              CameraWarmupService.instance.hasUserActivatedCamera,
+        },
+      ),
+    );
+    // #endregion
     await _initCamera(userInitiated: true);
   }
 
@@ -348,7 +360,37 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
   }
 
   Future<void> _toggleRecording() async {
+    // #region debug-point H2:record-button-tapped
+    unawaited(
+      _reportDebugEvent(
+        hypothesisId: 'H2',
+        location: 'video_upload_screen.dart:_toggleRecording',
+        msg: 'record button tapped',
+        data: {
+          'hasController': _cameraController != null,
+          'isInitialized': _cameraController?.value.isInitialized ?? false,
+          'showCameraPrimer': _showCameraPrimer,
+          'isInitializingCamera': _isInitializingCamera,
+        },
+      ),
+    );
+    // #endregion
     if (_cameraController == null || !_cameraController!.value.isInitialized) {
+      // #region debug-point H2:record-guard-return
+      unawaited(
+        _reportDebugEvent(
+          hypothesisId: 'H2',
+          location: 'video_upload_screen.dart:_toggleRecording',
+          msg: 'record button ignored by guard',
+          data: {
+            'hasController': _cameraController != null,
+            'isInitialized': _cameraController?.value.isInitialized ?? false,
+            'showCameraPrimer': _showCameraPrimer,
+            'isInitializingCamera': _isInitializingCamera,
+          },
+        ),
+      );
+      // #endregion
       return;
     }
 
@@ -394,6 +436,20 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
   }
 
   Future<void> _pickFromGallery() async {
+    // #region debug-point H2:gallery-button-tapped
+    unawaited(
+      _reportDebugEvent(
+        hypothesisId: 'H2',
+        location: 'video_upload_screen.dart:_pickFromGallery',
+        msg: 'gallery button tapped',
+        data: {
+          'showCameraPrimer': _showCameraPrimer,
+          'isInitializingCamera': _isInitializingCamera,
+          'isPickingFromGallery': _isPickingFromGallery,
+        },
+      ),
+    );
+    // #endregion
     if (_isPickingFromGallery) {
       return;
     }
@@ -503,7 +559,22 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
                 children: [
                   _buildTopActionButton(
                     icon: Icons.close,
-                    onTap: () => Navigator.pop(context),
+                    onTap: () {
+                      // #region debug-point H2:close-button-tapped
+                      unawaited(
+                        _reportDebugEvent(
+                          hypothesisId: 'H2',
+                          location: 'video_upload_screen.dart:build.close',
+                          msg: 'close button tapped',
+                          data: {
+                            'showCameraPrimer': _showCameraPrimer,
+                            'isInitializingCamera': _isInitializingCamera,
+                          },
+                        ),
+                      );
+                      // #endregion
+                      Navigator.pop(context);
+                    },
                   ),
                   if ((_cameras?.length ?? 0) > 1)
                     _buildTopActionButton(
@@ -846,76 +917,100 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
   }
 
   Widget _buildCameraPrimer() {
+    // #region debug-point H4:camera-primer-render
+    unawaited(
+      _reportDebugEvent(
+        hypothesisId: 'H4',
+        location: 'video_upload_screen.dart:_buildCameraPrimer',
+        msg: 'camera primer rendered',
+        data: {
+          'showCameraPrimer': _showCameraPrimer,
+          'isInitializingCamera': _isInitializingCamera,
+          'cameraError': _cameraError,
+        },
+      ),
+    );
+    // #endregion
     return Container(
       color: Colors.black,
       padding: const EdgeInsets.symmetric(horizontal: 28),
       child: SafeArea(
         child: Column(
           children: [
-            const Spacer(),
-            _buildCaptureGuide(),
-            const SizedBox(height: 40),
-            const Text(
-              '准备开启相机',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 28,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              _cameraError ??
-                  '首次使用时系统会请求相机权限。授权后，后续进入拍摄会更接近秒开体感。',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                height: 1.6,
-              ),
-            ),
-            const SizedBox(height: 28),
-            GestureDetector(
-              onTap: _isInitializingCamera ? null : _beginCameraFlow,
-              behavior: HitTestBehavior.opaque,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                alignment: Alignment.center,
-                child: _isInitializingCamera
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.black,
-                        ),
-                      )
-                    : const Text(
-                        '继续',
+            Expanded(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildCaptureGuide(),
+                      const SizedBox(height: 40),
+                      const Text(
+                        '准备开启相机',
                         style: TextStyle(
-                          color: Colors.black,
-                          fontSize: 16,
+                          color: Colors.white,
+                          fontSize: 28,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _cameraError ??
+                            '首次使用时系统会请求相机权限。授权后，后续进入拍摄会更接近秒开体感。',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          height: 1.6,
+                        ),
+                      ),
+                      const SizedBox(height: 28),
+                      GestureDetector(
+                        onTap: _isInitializingCamera ? null : _beginCameraFlow,
+                        behavior: HitTestBehavior.opaque,
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          alignment: Alignment.center,
+                          child: _isInitializingCamera
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.black,
+                                  ),
+                                )
+                              : const Text(
+                                  '继续',
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        '你也可以直接从相册导入素材',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
-            const SizedBox(height: 12),
-            const Text(
-              '你也可以直接从相册导入素材',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const Spacer(),
             GestureDetector(
               onTap: _pickFromGallery,
               behavior: HitTestBehavior.opaque,
@@ -925,7 +1020,9 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.10),
+                  ),
                 ),
                 child: const Icon(
                   Icons.photo_library_outlined,
