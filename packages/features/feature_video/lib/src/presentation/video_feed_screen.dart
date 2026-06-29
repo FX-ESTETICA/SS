@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:core_design_system/core_design_system.dart';
 import 'package:core_network/core_network.dart'; // 引入云端服务
 import 'package:media_kit_video/media_kit_video.dart';
+import '../domain/camera_warmup_service.dart';
 import '../domain/video_engine_pool.dart'; // 引入底层引擎池
+import '../domain/publish_overlay_store.dart';
 import 'video_upload_screen.dart'; // 引入上传页面
 
 enum VideoFeedMode {
@@ -49,6 +51,11 @@ class VideoModel {
   final String distributionChannelLabel;
   final String primaryDistributionLabel;
   final String statusLabel;
+  final bool isPending;
+  final bool isFailed;
+  final String? publishJobId;
+  final String pendingMessage;
+  final String? errorMessage;
 
   VideoModel({
     required this.url,
@@ -68,6 +75,11 @@ class VideoModel {
     this.distributionChannelLabel = '推荐',
     this.primaryDistributionLabel = 'MP4直出',
     this.statusLabel = '已发布',
+    this.isPending = false,
+    this.isFailed = false,
+    this.publishJobId,
+    this.pendingMessage = '',
+    this.errorMessage,
   });
 
   bool get isLandscape => contentOrientation == 'landscape';
@@ -114,6 +126,7 @@ class VideoFeedScreen extends StatefulWidget {
 
 class _VideoFeedScreenState extends State<VideoFeedScreen> {
   late PageController _pageController;
+  late final PublishOverlayStore _publishOverlayStore;
   final Map<VideoFeedMode, List<VideoModel>> _videosByMode = {
     VideoFeedMode.portrait: [],
     VideoFeedMode.landscape: [],
@@ -134,6 +147,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
   VideoFeedMode _currentFeedMode = VideoFeedMode.portrait;
   bool _isLoading = true;
   bool _isPaging = false; // 翻页状态锁
+  String? _lastHandledPublishJobId;
 
   List<VideoModel> get _videos => _videosByMode[_currentFeedMode]!;
   String? get _errorMessage => _errorMessageByMode[_currentFeedMode];
@@ -145,7 +159,10 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     // 1. 初始化 C++ 引擎池
     VideoEnginePool.instance.initialize();
 
+    _publishOverlayStore = PublishOverlayStore.instance;
+    _publishOverlayStore.addListener(_handlePublishOverlayChanged);
     _pageController = PageController();
+    unawaited(CameraWarmupService.instance.warmup());
     _fetchVideos();
   }
 
@@ -181,7 +198,6 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
           }
           if (data.isNotEmpty) {
             final newVideos = data.map(VideoModel.fromRecord).toList();
-            newVideos.shuffle(); // 纯前端打乱模拟个性化分发
             currentList.addAll(newVideos);
           } else if (isLoadMore && currentList.isNotEmpty) {
             // 【终极无底洞策略】：如果云端真的没有更多数据了，我们从已有列表中随机抽取打乱并追加
@@ -226,6 +242,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
     // 如果 Tab 切换导致非激活，强制暂停视频并冻结所有 C++ 解码
     if (oldWidget.isTabActive != widget.isTabActive) {
       if (widget.isTabActive) {
+        unawaited(CameraWarmupService.instance.warmup());
         _syncFocusForCurrentFeed();
       } else {
         // Tab 离开：静默冻结所有视频，实现物理隔离，解决跨 Tab 依然有声音的问题
@@ -284,9 +301,124 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
 
   @override
   void dispose() {
+    _publishOverlayStore.removeListener(_handlePublishOverlayChanged);
     _pageController.dispose();
     VideoEnginePool.instance.dispose();
     super.dispose();
+  }
+
+  void _handlePublishOverlayChanged() {
+    if (!mounted) {
+      return;
+    }
+    final state = _publishOverlayStore.state;
+    if (state.isActive && state.pendingVideo != null) {
+      _upsertPendingVideo(state.pendingVideo!);
+    }
+    if (state.stage == PublishOverlayStage.completed &&
+        state.completedVideo != null &&
+        state.jobId != null &&
+        state.jobId != _lastHandledPublishJobId) {
+      _lastHandledPublishJobId = state.jobId;
+      _injectPublishedVideo(state.completedVideo!);
+    }
+    if (state.stage == PublishOverlayStage.failed && state.pendingVideo != null) {
+      _upsertPendingVideo(state.pendingVideo!);
+    }
+    setState(() {});
+  }
+
+  void _injectPublishedVideo(PendingPublishedVideo completedVideo) {
+    final targetMode = completedVideo.contentOrientation == 'landscape'
+        ? VideoFeedMode.landscape
+        : VideoFeedMode.portrait;
+    final targetList = _videosByMode[targetMode]!;
+    final primaryUrl = completedVideo.primaryPlaybackUrl;
+    final exists = targetList.any(
+      (video) => video.primaryPlaybackUrl == primaryUrl,
+    );
+    if (exists) {
+      return;
+    }
+
+    final video = _videoModelFromPublishedVideo(completedVideo);
+
+    setState(() {
+      final pendingIndex = targetList.indexWhere(
+        (item) => item.publishJobId == completedVideo.jobId,
+      );
+      if (pendingIndex != -1) {
+        targetList[pendingIndex] = video;
+      } else {
+        final insertIndex = targetMode == _currentFeedMode
+            ? (_currentIndexByMode[targetMode]! + 1).clamp(0, targetList.length)
+            : 0;
+        targetList.insert(insertIndex, video);
+      }
+      _loadedByMode[targetMode] = true;
+      _errorMessageByMode[targetMode] = null;
+      if (_currentFeedMode == targetMode) {
+        _isLoading = false;
+      }
+      if (targetList.length == 1) {
+        _currentIndexByMode[targetMode] = 0;
+        if (_currentFeedMode == targetMode) {
+          _replacePageController(0);
+        }
+      }
+    });
+
+    if (_currentFeedMode == targetMode) {
+      _syncFocusForCurrentFeed();
+    }
+  }
+
+  void _upsertPendingVideo(PendingPublishedVideo pendingVideo) {
+    final targetMode = pendingVideo.contentOrientation == 'landscape'
+        ? VideoFeedMode.landscape
+        : VideoFeedMode.portrait;
+    final targetList = _videosByMode[targetMode]!;
+    final pendingModel = _videoModelFromPublishedVideo(pendingVideo);
+    final existingIndex = targetList.indexWhere(
+      (video) => video.publishJobId == pendingVideo.jobId,
+    );
+    setState(() {
+      if (existingIndex == -1) {
+        final insertIndex = targetMode == _currentFeedMode
+            ? (_currentIndexByMode[targetMode]! + 1).clamp(0, targetList.length)
+            : 0;
+        targetList.insert(insertIndex, pendingModel);
+      } else {
+        targetList[existingIndex] = pendingModel;
+      }
+      _loadedByMode[targetMode] = true;
+      if (_currentFeedMode == targetMode) {
+        _isLoading = false;
+      }
+    });
+  }
+
+  VideoModel _videoModelFromPublishedVideo(PendingPublishedVideo video) {
+    return VideoModel(
+      url: video.primaryPlaybackUrl,
+      primaryPlaybackUrl: video.primaryPlaybackUrl,
+      fallbackPlaybackUrl: video.fallbackPlaybackUrl,
+      prefersStreaming: video.prefersStreaming,
+      coverUrl: video.coverUrl,
+      authorName: video.authorName,
+      description: video.description,
+      width: video.width,
+      height: video.height,
+      contentOrientation: video.contentOrientation,
+      distributionChannelLabel: video.distributionChannelLabel,
+      primaryDistributionLabel: video.primaryDistributionLabel,
+      statusLabel: video.statusLabel,
+      isPending: video.isPending,
+      isFailed: video.isFailed,
+      publishJobId: video.jobId,
+      pendingMessage: video.pendingMessage,
+      errorMessage: video.errorMessage,
+    );
   }
 
   @override
@@ -313,6 +445,12 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
             ),
           ),
         ),
+        if (_publishOverlayStore.state.isVisible)
+          Positioned(
+            top: 86,
+            left: 16,
+            child: _buildPublishOverlay(),
+          ),
         if (_errorMessage != null)
           Positioned(
             top: 86,
@@ -532,7 +670,7 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
       );
       return;
     }
-    context.pushInstant<void>(
+    context.pushImmersive<void>(
       builder: (context) => const VideoUploadScreen(),
     );
   }
@@ -555,6 +693,116 @@ class _VideoFeedScreenState extends State<VideoFeedScreen> {
           ],
         ),
         child: const Icon(Icons.add, color: Colors.black, size: 32),
+      ),
+    );
+  }
+
+  Widget _buildPublishOverlay() {
+    final state = _publishOverlayStore.state;
+    final isCompleted = state.stage == PublishOverlayStage.completed;
+    final isFailed = state.stage == PublishOverlayStage.failed;
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 260),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+                child: Center(
+                  child: isCompleted
+                      ? const Icon(Icons.check, color: Colors.white, size: 12)
+                      : isFailed
+                          ? const Icon(Icons.close, color: Colors.white, size: 12)
+                          : const SizedBox(
+                              width: 10,
+                              height: 10,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Flexible(
+                child: Text(
+                  isFailed ? (state.error ?? state.message) : state.message,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (isFailed && state.jobId != null) ...[
+            const SizedBox(height: 10),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildOverlayAction(
+                  label: '重试',
+                  filled: true,
+                  onTap: () => _publishOverlayStore.retryFailedPublish(
+                    state.jobId!,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _buildOverlayAction(
+                  label: '关闭',
+                  onTap: () => _publishOverlayStore.dismissFailure(
+                    state.jobId!,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOverlayAction({
+    required String label,
+    required VoidCallback onTap,
+    bool filled = false,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: filled ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white, width: 1),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: filled ? Colors.black : Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
     );
   }
@@ -627,6 +875,113 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
             },
           ),
 
+          if (widget.video.isPending)
+            Center(
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.58),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      '发布中',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      widget.video.pendingMessage,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          if (widget.video.isFailed)
+            Center(
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.62),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.cloud_off, color: Colors.white, size: 20),
+                    const SizedBox(height: 12),
+                    const Text(
+                      '发布失败',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      widget.video.errorMessage ?? '网络或上传中断，可直接重试',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    GestureDetector(
+                      onTap: widget.video.publishJobId == null
+                          ? null
+                          : () => PublishOverlayStore.instance.retryFailedPublish(
+                                widget.video.publishJobId!,
+                              ),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: const Text(
+                          '重试发布',
+                          style: TextStyle(
+                            color: Colors.black,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
           // 2. 底部信息层 (作者、文案)
           Positioned(
             bottom: 80, // 避开最底部的进度条和底部导航栏
@@ -654,7 +1009,13 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
                   children: [
                     _buildMetaBadge(widget.video.statusLabel),
                     _buildMetaBadge(widget.video.distributionChannelLabel),
-                    _buildMetaBadge(widget.video.primaryDistributionLabel),
+                    _buildMetaBadge(
+                      widget.video.isPending
+                          ? widget.video.pendingMessage
+                          : widget.video.isFailed
+                              ? '可重试'
+                          : widget.video.primaryDistributionLabel,
+                    ),
                   ],
                 ),
               ],
@@ -667,33 +1028,34 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
             right: 8,
             child: Column(
               children: [
-                _buildActionIcon(
-                  Icons.favorite_border,
-                  _formatCount(widget.video.likeCount),
-                ),
-                const SizedBox(height: 20),
-                _buildActionIcon(
-                  Icons.comment_outlined,
-                  _formatCount(widget.video.commentCount),
-                ),
-                const SizedBox(height: 20),
-                _buildActionIcon(
-                  Icons.share_outlined,
-                  _formatCount(widget.video.shareCount, fallback: '分享'),
-                ),
-                const SizedBox(height: 20),
-                // 模拟旋转的光盘头像
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
-                    color: Colors.grey[800],
+                if (!widget.video.isPending && !widget.video.isFailed) ...[
+                  _buildActionIcon(
+                    Icons.favorite_border,
+                    _formatCount(widget.video.likeCount),
                   ),
-                  child: const Icon(Icons.music_note, color: Colors.white),
-                ),
-                const SizedBox(height: 30),
+                  const SizedBox(height: 20),
+                  _buildActionIcon(
+                    Icons.comment_outlined,
+                    _formatCount(widget.video.commentCount),
+                  ),
+                  const SizedBox(height: 20),
+                  _buildActionIcon(
+                    Icons.share_outlined,
+                    _formatCount(widget.video.shareCount, fallback: '分享'),
+                  ),
+                  const SizedBox(height: 20),
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                      color: Colors.grey[800],
+                    ),
+                    child: const Icon(Icons.music_note, color: Colors.white),
+                  ),
+                  const SizedBox(height: 30),
+                ],
                 // 发布/添加视频按钮，作为最顶端的UI设计重构，放在最末尾
                 GestureDetector(
                   onTap: () {
@@ -703,7 +1065,7 @@ class _VideoPlayerItemState extends State<_VideoPlayerItem> {
                       );
                       return;
                     }
-                    context.pushInstant<void>(
+                    context.pushImmersive<void>(
                       builder: (context) => const VideoUploadScreen(),
                     );
                   },

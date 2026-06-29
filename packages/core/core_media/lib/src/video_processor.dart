@@ -31,6 +31,16 @@ class VideoProcessResult {
   });
 }
 
+class VideoTimelineFrame {
+  const VideoTimelineFrame({
+    required this.file,
+    required this.position,
+  });
+
+  final File file;
+  final Duration position;
+}
+
 enum VideoOutputLayout {
   portrait(
     contentOrientation: 'portrait',
@@ -188,6 +198,85 @@ class VideoProcessor {
     }
 
     return null;
+  }
+
+  static Future<List<VideoTimelineFrame>> extractTimelineFrames({
+    required String sourcePath,
+    required double totalDurationSeconds,
+    int frameCount = 10,
+    int frameWidth = 180,
+  }) async {
+    final safeDuration =
+        totalDurationSeconds.isFinite && totalDurationSeconds > 0
+            ? totalDurationSeconds
+            : 1.0;
+    final safeFrameCount = frameCount.clamp(6, 16);
+    final tempDir = Directory.systemTemp;
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final framesDir = Directory('${tempDir.path}/${timestamp}_timeline_frames');
+    await framesDir.create(recursive: true);
+
+    final frames = <VideoTimelineFrame>[];
+    final framePositions = List<double>.generate(safeFrameCount, (index) {
+      if (safeFrameCount == 1) {
+        return 0;
+      }
+      return (safeDuration * index) / (safeFrameCount - 1);
+    });
+
+    if (Platform.isWindows) {
+      final ffmpegCommand = await _resolveWindowsFfmpegCommand();
+      if (ffmpegCommand == null) {
+        return const [];
+      }
+      for (var index = 0; index < framePositions.length; index++) {
+        final seconds = framePositions[index];
+        final file = File('${framesDir.path}/frame_$index.jpg');
+        final args = [
+          '-y',
+          '-ss',
+          '$seconds',
+          '-i',
+          sourcePath,
+          '-frames:v',
+          '1',
+          '-vf',
+          'scale=$frameWidth:-1:flags=lanczos',
+          '-q:v',
+          '4',
+          file.path,
+        ];
+        final result = await Process.run(ffmpegCommand, args);
+        if (result.exitCode == 0 && file.existsSync()) {
+          frames.add(
+            VideoTimelineFrame(
+              file: file,
+              position: Duration(milliseconds: (seconds * 1000).round()),
+            ),
+          );
+        }
+      }
+      return frames;
+    }
+
+    for (var index = 0; index < framePositions.length; index++) {
+      final seconds = framePositions[index];
+      final file = File('${framesDir.path}/frame_$index.jpg');
+      final cmd =
+          '-y -ss $seconds -i "$sourcePath" -frames:v 1 '
+          '-vf "scale=$frameWidth:-1:flags=lanczos" -q:v 4 "${file.path}"';
+      final session = await FFmpegKit.execute(cmd);
+      final returnCode = await session.getReturnCode();
+      if (ReturnCode.isSuccess(returnCode) && file.existsSync()) {
+        frames.add(
+          VideoTimelineFrame(
+            file: file,
+            position: Duration(milliseconds: (seconds * 1000).round()),
+          ),
+        );
+      }
+    }
+    return frames;
   }
 
   /// 将用户选定的视频进行极限压缩，转码为 H.264，并抽取指定时间点的封面

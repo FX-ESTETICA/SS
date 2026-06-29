@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:core_design_system/core_design_system.dart';
 import 'package:core_network/core_network.dart';
@@ -55,6 +56,8 @@ void main() async {
   
   // 初始化终极磁盘级视频缓存代理 (TikTok-level Cache)
   await DiskVideoCacheManager.instance.initialize();
+  // 三端统一相机预热：让首次点击拍摄更接近秒开体感
+  unawaited(CameraWarmupService.instance.warmup());
 
   // 1. 初始化全球云端引擎 (Supabase)
   // 使用您专属的意大利节点项目密钥，正式接管云端！

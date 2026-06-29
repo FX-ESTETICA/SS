@@ -1,12 +1,15 @@
+import 'dart:async';
 import 'dart:io';
+
+import 'package:core_media/core_media.dart';
+import 'package:core_network/core_network.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_editor/video_editor.dart';
 import 'package:video_player/video_player.dart';
-import 'package:core_media/core_media.dart'; // 引入我们刚才写的底层处理引擎
 import 'package:video_player_win/video_player_win.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:core_network/core_network.dart';
+import '../domain/publish_overlay_store.dart';
 
 enum _VideoAspectPreset {
   portrait(
@@ -31,11 +34,18 @@ enum _VideoAspectPreset {
   final VideoOutputLayout outputLayout;
 }
 
-/// 15秒时间轴截取与转码编辑器
+enum _EditorTimelineMode { clip, cover }
+
+/// 全屏沉浸式视频编辑器
 class VideoEditorScreen extends ConsumerStatefulWidget {
   final File file;
+  final VideoOutputLayout? preferredOutputLayout;
 
-  const VideoEditorScreen({super.key, required this.file});
+  const VideoEditorScreen({
+    super.key,
+    required this.file,
+    this.preferredOutputLayout,
+  });
 
   @override
   ConsumerState<VideoEditorScreen> createState() => _VideoEditorScreenState();
@@ -44,9 +54,14 @@ class VideoEditorScreen extends ConsumerStatefulWidget {
 class _VideoEditorScreenState extends ConsumerState<VideoEditorScreen> {
   VideoEditorController? _controller;
   VideoPlayerController? _windowsPreviewController;
-  bool _isExporting = false;
-  String _exportStatus = '';
+  bool _isStartingPublish = false;
   _VideoAspectPreset _selectedAspectPreset = _VideoAspectPreset.portrait;
+  double _windowsTrimStartFraction = 0.0;
+  double _windowsTrimEndFraction = 1.0;
+  double _windowsCoverFraction = 0.0;
+  bool _isLoadingTimelineFrames = false;
+  List<VideoTimelineFrame> _timelineFrames = const [];
+  _EditorTimelineMode _timelineMode = _EditorTimelineMode.clip;
   bool get _isWindowsDesktop => Platform.isWindows;
   bool get _supportsThumbnailTimeline => !_isWindowsDesktop;
   bool get _isEditorReady => _isWindowsDesktop
@@ -57,26 +72,13 @@ class _VideoEditorScreenState extends ConsumerState<VideoEditorScreen> {
 
   VideoOutputLayout get _currentOutputLayout =>
       _selectedAspectPreset.outputLayout;
-
-  String get _distributionPreviewLabel =>
-      _currentOutputLayout.contentOrientation == 'landscape' ? '横屏' : '推荐';
-
-  String get _primaryDistributionPreviewLabel => 'HLS主链';
-
-  String get _fallbackDistributionPreviewLabel => 'MP4兜底';
-
-  String _guessContentType(String path, {required String fallback}) {
-    final lowerPath = path.toLowerCase();
-    if (lowerPath.endsWith('.m3u8')) return 'application/vnd.apple.mpegurl';
-    if (lowerPath.endsWith('.webp')) return 'image/webp';
-    if (lowerPath.endsWith('.jpg') || lowerPath.endsWith('.jpeg')) {
-      return 'image/jpeg';
-    }
-    if (lowerPath.endsWith('.png')) return 'image/png';
-    if (lowerPath.endsWith('.mp4')) return 'video/mp4';
-    if (lowerPath.endsWith('.mov')) return 'video/quicktime';
-    return fallback;
-  }
+  Duration get _sourceDuration => _isWindowsDesktop
+      ? _windowsSourceDuration
+      : (_controller?.video.value.duration ?? const Duration(seconds: 1));
+  Duration get _windowsSourceDuration =>
+      _windowsController.value.duration <= Duration.zero
+          ? const Duration(seconds: 1)
+          : _windowsController.value.duration;
 
   @override
   void initState() {
@@ -93,22 +95,25 @@ class _VideoEditorScreenState extends ConsumerState<VideoEditorScreen> {
     final controller = VideoEditorController.file(
       widget.file,
       minDuration: const Duration(seconds: 1),
-      maxDuration: const Duration(seconds: 15),
     );
     _controller = controller;
 
-    controller.initialize().then((_) {
-      final autoPreset = _resolveAutoAspectPreset(
-        sourceWidth: controller.videoWidth,
-        sourceHeight: controller.videoHeight,
-      );
+    controller.initialize().then((_) async {
+      final autoPreset = widget.preferredOutputLayout == null
+          ? _resolveAutoAspectPreset(
+              sourceWidth: controller.videoWidth,
+              sourceHeight: controller.videoHeight,
+            )
+          : _presetFromOutputLayout(widget.preferredOutputLayout!);
       controller.cropAspectRatio(autoPreset.ratio);
+      await controller.video.setLooping(true);
       if (!mounted) {
         return;
       }
       setState(() {
         _selectedAspectPreset = autoPreset;
       });
+      unawaited(_loadTimelineFrames());
     }).catchError((error) {
       debugPrint('VideoEditorController init error: $error');
       // 处理无法解码的视频格式
@@ -125,10 +130,12 @@ class _VideoEditorScreenState extends ConsumerState<VideoEditorScreen> {
       await controller.initialize();
       await controller.setLooping(true);
       final sourceSize = controller.value.size;
-      final autoPreset = _resolveAutoAspectPreset(
-        sourceWidth: sourceSize.width,
-        sourceHeight: sourceSize.height,
-      );
+      final autoPreset = widget.preferredOutputLayout == null
+          ? _resolveAutoAspectPreset(
+              sourceWidth: sourceSize.width,
+              sourceHeight: sourceSize.height,
+            )
+          : _presetFromOutputLayout(widget.preferredOutputLayout!);
       if (!mounted) {
         await controller.dispose();
         return;
@@ -136,10 +143,43 @@ class _VideoEditorScreenState extends ConsumerState<VideoEditorScreen> {
       setState(() {
         _selectedAspectPreset = autoPreset;
       });
+      unawaited(_loadTimelineFrames());
     } catch (error) {
       debugPrint('Windows preview init error: $error');
       if (mounted) {
         Navigator.pop(context);
+      }
+    }
+  }
+
+  Future<void> _loadTimelineFrames() async {
+    setState(() {
+      _isLoadingTimelineFrames = true;
+    });
+    try {
+      final frames = await VideoProcessor.extractTimelineFrames(
+        sourcePath: widget.file.path,
+        totalDurationSeconds: _sourceDuration.inMilliseconds / 1000.0,
+        frameCount: 10,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _timelineFrames = frames;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _timelineFrames = const [];
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingTimelineFrames = false;
+        });
       }
     }
   }
@@ -153,6 +193,12 @@ class _VideoEditorScreenState extends ConsumerState<VideoEditorScreen> {
       return _VideoAspectPreset.portrait;
     }
     return sourceRatio >= 1
+        ? _VideoAspectPreset.landscape
+        : _VideoAspectPreset.portrait;
+  }
+
+  _VideoAspectPreset _presetFromOutputLayout(VideoOutputLayout outputLayout) {
+    return outputLayout == VideoOutputLayout.landscape
         ? _VideoAspectPreset.landscape
         : _VideoAspectPreset.portrait;
   }
@@ -180,7 +226,11 @@ class _VideoEditorScreenState extends ConsumerState<VideoEditorScreen> {
 
   Duration _resolvedTrimStart() {
     if (_isWindowsDesktop) {
-      return Duration.zero;
+      return Duration(
+        milliseconds: (_windowsSourceDuration.inMilliseconds *
+                _windowsTrimStartFraction)
+            .round(),
+      );
     }
     return _editorController.startTrim;
   }
@@ -189,18 +239,19 @@ class _VideoEditorScreenState extends ConsumerState<VideoEditorScreen> {
     if (!_isWindowsDesktop) {
       return _editorController.endTrim;
     }
-    final sourceDuration = _windowsController.value.duration;
-    final sourceMs = sourceDuration.inMilliseconds;
-    if (sourceMs <= 0) {
-      return const Duration(seconds: 1);
-    }
-    final boundedMs = sourceMs > 15000 ? 15000 : sourceMs;
-    return Duration(milliseconds: boundedMs);
+    return Duration(
+      milliseconds:
+          (_windowsSourceDuration.inMilliseconds * _windowsTrimEndFraction)
+              .round(),
+    );
   }
 
   double _resolvedCoverTimeSeconds(double startSeconds) {
     if (_isWindowsDesktop) {
-      return startSeconds;
+      final absoluteSeconds =
+          _windowsSourceDuration.inMilliseconds * _windowsCoverFraction / 1000.0;
+      final endSeconds = _resolvedTrimEnd().inMilliseconds / 1000.0;
+      return absoluteSeconds.clamp(startSeconds, endSeconds);
     }
     final coverMs = _editorController.selectedCoverVal?.timeMs;
     if (coverMs == null) {
@@ -223,18 +274,28 @@ class _VideoEditorScreenState extends ConsumerState<VideoEditorScreen> {
     );
   }
 
-  /// 核心逻辑：触发端侧转码与上传
-  Future<void> _exportVideo() async {
+  Future<void> _seekWindowsPreview(Duration position) async {
+    if (!_isWindowsDesktop) {
+      return;
+    }
+    final duration = _windowsSourceDuration;
+    final bounded = position > duration ? duration : position;
+    await _windowsController.seekTo(bounded);
+  }
+
+  Future<void> _startPublishFlow() async {
+    if (_isStartingPublish) {
+      return;
+    }
     setState(() {
-      _isExporting = true;
-      _exportStatus = '正在压榨手机算力转码中...';
+      _isStartingPublish = true;
     });
 
     try {
       final session = SupabaseService.currentSession;
       final user = SupabaseService.currentUser;
       if (session == null || user == null) {
-        throw Exception('请先登录后再上传和发布视频');
+        throw Exception('请先登录后再发布视频');
       }
 
       IdentityHub? identityHub =
@@ -246,317 +307,44 @@ class _VideoEditorScreenState extends ConsumerState<VideoEditorScreen> {
       if (identityHub == null) {
         throw Exception('身份系统尚未准备完成，请稍后重试');
       }
-      final activeIdentity = identityHub.activeIdentity;
 
-      // 1. 获取用户在时间轴上截取的起止时间 (秒)
       final trimStart = _resolvedTrimStart();
       final trimEnd = _resolvedTrimEnd();
-      final double start = trimStart.inMilliseconds / 1000.0;
-      final double end = trimEnd.inMilliseconds / 1000.0;
-      final double duration = end - start;
-
-      // 2. 获取用户选定的封面所在秒数
-      final double coverTime = _resolvedCoverTimeSeconds(start);
-
-      // 3. 调用我们封装的底层 C++/FFmpeg 引擎进行硬件转码
-      final outputLayout = _selectedAspectPreset.outputLayout;
-      final cropSelection = _resolvedCropSelection();
-      final result = await VideoProcessor.transcodeAndExtractCover(
-        sourcePath: widget.file.path,
-        outputLayout: outputLayout,
-        cropSelection: cropSelection,
-        startTimeSeconds: start,
-        coverTimeSeconds: coverTime,
-        maxDurationSeconds:
-            duration.toInt() == 0 ? 1 : duration.toInt(), // 实际截取的长度 (最大15s)
+      final startSeconds = trimStart.inMilliseconds / 1000.0;
+      final endSeconds = trimEnd.inMilliseconds / 1000.0;
+      final coverTimeSeconds = _resolvedCoverTimeSeconds(startSeconds);
+      final started = PublishOverlayStore.instance.startPublish(
+        PublishVideoRequest(
+          file: widget.file,
+          activeIdentity: identityHub.activeIdentity,
+          outputLayout: _currentOutputLayout,
+          trimStartSeconds: startSeconds,
+          trimEndSeconds: endSeconds,
+          coverTimeSeconds: coverTimeSeconds,
+          cropSelection: _resolvedCropSelection(),
+        ),
       );
-
-      if (result != null) {
-        setState(() {
-          _exportStatus = '转码成功！正在上传至云端节点...';
-        });
-
-        final videoBytes = await result.videoFile.readAsBytes();
-        final videoFileName =
-            'video_${DateTime.now().millisecondsSinceEpoch}.mp4';
-        final uploadBatchPrefix = 'publish_${DateTime.now().millisecondsSinceEpoch}';
-        final coverFile = result.coverFile;
-        final streamManifestFile = result.streamManifestFile;
-        final streamSegmentFiles = result.streamSegmentFiles;
-        final publishedWidth = result.width ?? outputLayout.targetWidth;
-        final publishedHeight = result.height ?? outputLayout.targetHeight;
-        final videoContentType = _guessContentType(
-          result.videoFile.path,
-          fallback: 'video/mp4',
-        );
-        final videoChecksum = SupabaseService.computeSha256Hex(videoBytes);
-        UploadedMedia videoUpload =
-            await SupabaseService.findReusableUploadedMedia(
-              mediaKind: 'video',
-              checksumSha256: videoChecksum,
-            ) ??
-            const UploadedMedia(
-              ownerId: '',
-              objectKey: '',
-              publicUrl: '',
-              mediaKind: 'video',
-              contentType: 'video/mp4',
-              bytes: 0,
-              checksumSha256: '',
-              sourceFilename: '',
-            );
-        if (videoUpload.publicUrl.isEmpty) {
-          final videoUploadSession = await SupabaseService.issueUploadSession(
-            mediaKind: 'video',
-            sourceFilename: videoFileName,
-            contentType: videoContentType,
-            fileSizeBytes: videoBytes.length,
-            ownerIdentityId: activeIdentity.id,
-            idempotencyKey: '${uploadBatchPrefix}_video',
-            preferredObjectPrefix: uploadBatchPrefix,
-            uploadPurpose: 'video_publish_primary',
-            checksumSha256: videoChecksum,
-            expectedWidth: publishedWidth,
-            expectedHeight: publishedHeight,
-            uploadMetadata: {
-              'contentOrientation': outputLayout.contentOrientation,
-              'aspectRatioLabel': outputLayout.aspectRatioLabel,
-            },
-          );
-
-          videoUpload = await SupabaseService.uploadMedia(
-            fileName: videoFileName,
-            fileBytes: videoBytes,
-            mediaKind: 'video',
-            accessToken: session.accessToken,
-            contentType: videoContentType,
-            width: publishedWidth,
-            height: publishedHeight,
-            objectPrefix: videoUploadSession.objectPrefix,
-            uploadSessionId: videoUploadSession.id,
-          );
-        } else {
-          setState(() {
-            _exportStatus = '命中已存在主视频资产，跳过重复上传...';
-          });
-        }
-
-        UploadedMedia? coverUpload;
-        if (coverFile != null && await coverFile.exists()) {
-          final coverBytes = await coverFile.readAsBytes();
-          final coverFileName =
-              'cover_${DateTime.now().millisecondsSinceEpoch}.webp';
-          final coverContentType = _guessContentType(
-            coverFile.path,
-            fallback: 'image/webp',
-          );
-          final coverChecksum = SupabaseService.computeSha256Hex(coverBytes);
-          coverUpload = await SupabaseService.findReusableUploadedMedia(
-            mediaKind: 'cover',
-            checksumSha256: coverChecksum,
-          );
-          if (coverUpload == null) {
-            final coverUploadSession = await SupabaseService.issueUploadSession(
-              mediaKind: 'cover',
-              sourceFilename: coverFileName,
-              contentType: coverContentType,
-              fileSizeBytes: coverBytes.length,
-              ownerIdentityId: activeIdentity.id,
-              idempotencyKey: '${uploadBatchPrefix}_cover',
-              preferredObjectPrefix: uploadBatchPrefix,
-              uploadPurpose: 'video_publish_cover',
-              checksumSha256: coverChecksum,
-              expectedWidth: publishedWidth,
-              expectedHeight: publishedHeight,
-              uploadMetadata: {
-                'contentOrientation': outputLayout.contentOrientation,
-                'aspectRatioLabel': outputLayout.aspectRatioLabel,
-              },
-            );
-            coverUpload = await SupabaseService.uploadMedia(
-              fileName: coverFileName,
-              fileBytes: coverBytes,
-              mediaKind: 'cover',
-              accessToken: session.accessToken,
-              contentType: coverContentType,
-              width: publishedWidth,
-              height: publishedHeight,
-              objectPrefix: coverUploadSession.objectPrefix,
-              uploadSessionId: coverUploadSession.id,
-            );
-          } else {
-            setState(() {
-              _exportStatus = '命中已存在封面资产，跳过重复上传...';
-            });
-          }
-        }
-
-        UploadedMedia? streamManifestUpload;
-        String? streamObjectPrefix;
-        final segmentUploadSessionIds = <String>{};
-        if (streamManifestFile != null && await streamManifestFile.exists()) {
-          setState(() {
-            _exportStatus = '正在上传单清晰度分片流...';
-          });
-
-          final manifestBytes = await streamManifestFile.readAsBytes();
-          final manifestChecksum = SupabaseService.computeSha256Hex(
-            manifestBytes,
-          );
-          final manifestContentType = _guessContentType(
-            streamManifestFile.path,
-            fallback: 'application/vnd.apple.mpegurl',
-          );
-          final stableStreamPrefix =
-              'stream_${manifestChecksum.substring(0, 16)}';
-          streamManifestUpload =
-              await SupabaseService.findReusableUploadedMedia(
-                mediaKind: 'stream',
-                checksumSha256: manifestChecksum,
-              );
-
-          if (streamManifestUpload != null) {
-            streamObjectPrefix = streamManifestUpload.objectPrefix;
-            setState(() {
-              _exportStatus = '命中已存在分片流资产，跳过重复上传...';
-            });
-          } else {
-            streamObjectPrefix = stableStreamPrefix;
-
-            for (var index = 0; index < streamSegmentFiles.length; index++) {
-              final segmentFile = streamSegmentFiles[index];
-              if (!await segmentFile.exists()) continue;
-              final segmentBytes = await segmentFile.readAsBytes();
-              final segmentFileName = segmentFile.uri.pathSegments.last;
-              final segmentContentType = _guessContentType(
-                segmentFile.path,
-                fallback: 'video/mp4',
-              );
-              final segmentChecksum = SupabaseService.computeSha256Hex(
-                segmentBytes,
-              );
-              final segmentUploadSession =
-                  await SupabaseService.issueUploadSession(
-                    mediaKind: 'stream',
-                    sourceFilename: segmentFileName,
-                    contentType: segmentContentType,
-                    fileSizeBytes: segmentBytes.length,
-                    ownerIdentityId: activeIdentity.id,
-                    idempotencyKey:
-                        '${streamObjectPrefix}_segment_${index}_$segmentFileName',
-                    preferredObjectPrefix: streamObjectPrefix,
-                    uploadPurpose: 'video_publish_stream_segment',
-                    checksumSha256: segmentChecksum,
-                    expectedWidth: publishedWidth,
-                    expectedHeight: publishedHeight,
-                    uploadMetadata: {
-                      'contentOrientation': outputLayout.contentOrientation,
-                      'aspectRatioLabel': outputLayout.aspectRatioLabel,
-                      'segmentIndex': index,
-                      'segmentFileName': segmentFileName,
-                    },
-                  );
-              final segmentUpload = await SupabaseService.uploadMedia(
-                fileName: segmentFileName,
-                fileBytes: segmentBytes,
-                mediaKind: 'stream',
-                accessToken: session.accessToken,
-                contentType: segmentContentType,
-                width: publishedWidth,
-                height: publishedHeight,
-                objectPrefix: streamObjectPrefix,
-                uploadSessionId: segmentUploadSession.id,
-              );
-              segmentUploadSessionIds.add(
-                segmentUpload.uploadSessionId ?? segmentUploadSession.id,
-              );
-            }
-
-            final manifestUploadSession =
-                await SupabaseService.issueUploadSession(
-                  mediaKind: 'stream',
-                  sourceFilename: streamManifestFile.uri.pathSegments.last,
-                  contentType: manifestContentType,
-                  fileSizeBytes: manifestBytes.length,
-                  ownerIdentityId: activeIdentity.id,
-                  idempotencyKey: '${streamObjectPrefix}_manifest',
-                  preferredObjectPrefix: streamObjectPrefix,
-                  uploadPurpose: 'video_publish_stream_manifest',
-                  checksumSha256: manifestChecksum,
-                  expectedWidth: publishedWidth,
-                  expectedHeight: publishedHeight,
-                  uploadMetadata: {
-                    'contentOrientation': outputLayout.contentOrientation,
-                    'aspectRatioLabel': outputLayout.aspectRatioLabel,
-                    'segmentCount': streamSegmentFiles.length,
-                  },
-                );
-            streamManifestUpload = await SupabaseService.uploadMedia(
-              fileName: streamManifestFile.uri.pathSegments.last,
-              fileBytes: manifestBytes,
-              mediaKind: 'stream',
-              accessToken: session.accessToken,
-              contentType: manifestContentType,
-              width: publishedWidth,
-              height: publishedHeight,
-              objectPrefix: manifestUploadSession.objectPrefix,
-              uploadSessionId: manifestUploadSession.id,
-            );
-            streamObjectPrefix = manifestUploadSession.objectPrefix;
-          }
-        }
-
-        setState(() {
-          _exportStatus = '上传完成，正在发布动态...';
-        });
-
-        final authorName = activeIdentity.displayName.trim().isNotEmpty
-            ? activeIdentity.displayName
-            : (user.email?.split('@').first ?? '匿名用户');
-
-        await SupabaseService.publishVideo(
-          videoUpload: videoUpload,
-          coverUpload: coverUpload,
-          streamManifestUpload: streamManifestUpload,
-          description: '刚刚通过智选超级 APP 极限压缩上传了这条视频！🚀',
-          authorId: user.id,
-          authorIdentityId: activeIdentity.id,
-          authorName: authorName,
-          durationSeconds: duration <= 0 ? 1 : duration,
-          contentOrientation: outputLayout.contentOrientation,
-          aspectRatioLabel: outputLayout.aspectRatioLabel,
-          width: publishedWidth,
-          height: publishedHeight,
-          streamObjectPrefix: streamObjectPrefix,
-          streamFormat: streamManifestUpload == null ? null : 'hls',
-        );
-        await SupabaseService.consumeUploadSessions(segmentUploadSessionIds);
-
-        setState(() {
-          _exportStatus = '发布成功！';
-        });
-
-        // 等待1秒后返回
-        await Future.delayed(const Duration(seconds: 1));
-        if (mounted) {
-          Navigator.pop(context); // 返回上一页
-        }
-      } else {
-        setState(() {
-          _exportStatus = '转码失败，请检查视频格式';
-        });
+      if (!started) {
+        throw Exception('已有发布任务正在进行，请等待当前作品完成');
       }
-    } catch (e) {
-      debugPrint('Export error: $e');
-      setState(() {
-        _exportStatus = '发生错误: $e';
-      });
-      // 延迟 3 秒让用户看到错误信息
-      await Future.delayed(const Duration(seconds: 3));
+      if (!mounted) {
+        return;
+      }
+      final navigator = Navigator.of(context);
+      navigator.pop();
+      if (navigator.canPop()) {
+        navigator.pop();
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$error')),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() {
-          _isExporting = false;
+          _isStartingPublish = false;
         });
       }
     }
@@ -565,96 +353,31 @@ class _VideoEditorScreenState extends ConsumerState<VideoEditorScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black, // 编辑器必须是纯黑环境
+      backgroundColor: Colors.black,
       body: _isEditorReady
-          ? SafeArea(
-              child: Stack(
-                children: [
-                  Column(
+          ? Stack(
+              children: [
+                Positioned.fill(child: _buildPreviewArea()),
+                Positioned.fill(child: _buildPreviewOverlay()),
+                SafeArea(
+                  child: Stack(
                     children: [
-                      _buildTopBar(),
-                      // 视频预览区
-                      Expanded(
-                        child: _buildPreviewArea(),
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        child: _buildTopBar(),
                       ),
-                      // 底部编辑控制区
-                      Container(
-                        color: Colors.black,
-                        padding: const EdgeInsets.only(bottom: 20),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _buildAspectRatioSelector(),
-                            const SizedBox(height: 14),
-                            _buildDistributionPreview(),
-                            const SizedBox(height: 16),
-                            _buildPlaybackControl(),
-                            const SizedBox(height: 12),
-                            if (_supportsThumbnailTimeline) ...[
-                              Container(
-                                height: 60,
-                                margin:
-                                    const EdgeInsets.symmetric(horizontal: 16),
-                                child: TrimSlider(
-                                  controller: _editorController,
-                                  height: 60,
-                                  horizontalMargin: 0,
-                                ),
-                              ),
-                              const SizedBox(height: 24),
-                              const Text(
-                                '滑动选择封面',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Container(
-                                height: 40,
-                                margin:
-                                    const EdgeInsets.symmetric(horizontal: 16),
-                                child: CoverSelection(
-                                  controller: _editorController,
-                                  size: 40,
-                                ),
-                              ),
-                            ] else ...[
-                              _buildWindowsEditorNotice(),
-                            ],
-                          ],
-                        ),
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: _buildBottomPanel(),
                       ),
                     ],
                   ),
-                  // 转码中的全屏遮罩
-                  if (_isExporting)
-                    Container(
-                      color: Colors.black,
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const CircularProgressIndicator(
-                              color: Colors.white,
-                            ),
-                            const SizedBox(height: 24),
-                            Text(
-                              _exportStatus,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                height: 1.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+                ),
+              ],
             )
           : const Center(child: CircularProgressIndicator(color: Colors.white)),
     );
@@ -666,34 +389,59 @@ class _VideoEditorScreenState extends ConsumerState<VideoEditorScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          IconButton(
-            icon: const Icon(Icons.close, color: Colors.white),
-            onPressed: () => Navigator.pop(context),
+          _buildCircleAction(
+            icon: Icons.close,
+            onTap: _isStartingPublish ? null : () => Navigator.pop(context),
           ),
-          const Text(
-            '截取 15 秒',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w500,
-              fontSize: 16,
-            ),
-          ),
-          GestureDetector(
-            onTap: _isExporting ? null : _exportVideo,
-            behavior: HitTestBehavior.opaque,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white, // 纯白发布按钮
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Text(
-                '发布',
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                '编辑视频',
                 style: TextStyle(
-                  color: Colors.black,
-                  fontWeight: FontWeight.w500,
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
                 ),
               ),
+              const SizedBox(height: 4),
+              Text(
+                '已选 ${_formatDuration(_resolvedTrimEnd() - _resolvedTrimStart())}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+          GestureDetector(
+            onTap: _isStartingPublish ? null : _startPublishFlow,
+            behavior: HitTestBehavior.opaque,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: _isStartingPublish
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.black,
+                      ),
+                    )
+                  : const Text(
+                      '发布',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                    ),
             ),
           ),
         ],
@@ -701,45 +449,147 @@ class _VideoEditorScreenState extends ConsumerState<VideoEditorScreen> {
     );
   }
 
-  Widget _buildAspectRatioSelector() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: _VideoAspectPreset.values.map((preset) {
-          final isSelected = preset == _selectedAspectPreset;
-          return Padding(
-            padding: EdgeInsets.only(
-              right: preset == _VideoAspectPreset.values.last ? 0 : 10,
+  Widget _buildPreviewOverlay() {
+    return IgnorePointer(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.black.withValues(alpha: 0.28),
+              Colors.transparent,
+              Colors.black.withValues(alpha: 0.56),
+            ],
+            stops: const [0.0, 0.38, 1.0],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomPanel() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.black.withValues(alpha: 0.0),
+            Colors.black.withValues(alpha: 0.86),
+          ],
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildEditorMetricsRow(),
+          const SizedBox(height: 14),
+          _buildAspectRatioSelector(),
+          const SizedBox(height: 18),
+          _buildPlaybackRow(),
+          const SizedBox(height: 18),
+          _buildTimelineSection(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEditorMetricsRow() {
+    final totalDuration = _sourceDuration;
+    final selectedDuration = _resolvedTrimEnd() - _resolvedTrimStart();
+    final coverDuration = Duration(
+      milliseconds: (_resolvedCoverTimeSeconds(
+            _resolvedTrimStart().inMilliseconds / 1000.0,
+          ) *
+          1000)
+          .round(),
+    );
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        _buildMetricPill(label: '总时长', value: _formatDuration(totalDuration)),
+        _buildMetricPill(label: '片段', value: _formatDuration(selectedDuration)),
+        _buildMetricPill(label: '封面', value: _formatDuration(coverDuration)),
+      ],
+    );
+  }
+
+  Widget _buildMetricPill({
+    required String label,
+    required String value,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: RichText(
+        text: TextSpan(
+          children: [
+            TextSpan(
+              text: '$label ',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
             ),
-            child: GestureDetector(
-              onTap: _isExporting ? null : () => _applyAspectPreset(preset),
-              behavior: HitTestBehavior.opaque,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: Colors.white,
-                  ),
-                  color: isSelected ? Colors.white : Colors.black,
-                ),
-                child: Text(
-                  preset.label,
-                  style: TextStyle(
-                    color: isSelected ? Colors.black : Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
+            TextSpan(
+              text: value,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAspectRatioSelector() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: _VideoAspectPreset.values.map((preset) {
+        final isSelected = preset == _selectedAspectPreset;
+        return Padding(
+          padding: EdgeInsets.only(
+            right: preset == _VideoAspectPreset.values.last ? 0 : 10,
+          ),
+          child: GestureDetector(
+            onTap: _isStartingPublish ? null : () => _applyAspectPreset(preset),
+            behavior: HitTestBehavior.opaque,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 18,
+                vertical: 10,
+              ),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: Colors.white, width: 1),
+                color: isSelected ? Colors.white : Colors.transparent,
+              ),
+              child: Text(
+                preset.label,
+                style: TextStyle(
+                  color: isSelected ? Colors.black : Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
-          );
-        }).toList(),
-      ),
+          ),
+        );
+      }).toList(),
     );
   }
 
@@ -751,116 +601,643 @@ class _VideoEditorScreenState extends ConsumerState<VideoEditorScreen> {
     final aspectRatio = _windowsController.value.aspectRatio;
     final safeAspectRatio =
         aspectRatio.isFinite && aspectRatio > 0 ? aspectRatio : 9 / 16;
+    final sourceWidth = safeAspectRatio >= 1 ? 1920.0 : 1080.0;
+    final sourceHeight = safeAspectRatio >= 1 ? 1080.0 : 1920.0;
     return Center(
-      child: AspectRatio(
-        aspectRatio: safeAspectRatio,
-        child: VideoPlayer(_windowsController),
+      child: FittedBox(
+        fit: BoxFit.cover,
+        child: SizedBox(
+          width: sourceWidth,
+          height: sourceHeight,
+          child: AspectRatio(
+            aspectRatio: safeAspectRatio,
+            child: VideoPlayer(_windowsController),
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildPlaybackControl() {
-    if (_isWindowsDesktop) {
-      return ValueListenableBuilder<VideoPlayerValue>(
-        valueListenable: _windowsController,
-        builder: (context, value, _) {
-          return IconButton(
-            onPressed: () {
-              if (value.isPlaying) {
+  Widget _buildPlaybackRow() {
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        _buildCircleAction(
+          icon: _isWindowsDesktop
+              ? (_windowsController.value.isPlaying
+                    ? Icons.pause
+                    : Icons.play_arrow)
+              : (_editorController.isPlaying ? Icons.pause : Icons.play_arrow),
+          onTap: () {
+            if (_isWindowsDesktop) {
+              if (_windowsController.value.isPlaying) {
                 _windowsController.pause();
               } else {
                 _windowsController.play();
               }
-            },
-            icon: Icon(
-              value.isPlaying ? Icons.pause : Icons.play_arrow,
-              color: Colors.white,
-              size: 32,
-            ),
-          );
-        },
-      );
-    }
-
-    return AnimatedBuilder(
-      animation: _editorController.video,
-      builder: (_, __) {
-        return IconButton(
-          onPressed: () {
+              setState(() {});
+              return;
+            }
             if (_editorController.isPlaying) {
               _editorController.video.pause();
             } else {
               _editorController.video.play();
             }
+            setState(() {});
           },
-          icon: Icon(
-            _editorController.isPlaying ? Icons.pause : Icons.play_arrow,
-            color: Colors.white,
-            size: 32,
+        ),
+        _buildTimelineQuickChip(
+          label: '片段',
+          value: _formatDuration(_resolvedTrimEnd() - _resolvedTrimStart()),
+          isSelected: _timelineMode == _EditorTimelineMode.clip,
+          onTap: () {
+            setState(() {
+              _timelineMode = _EditorTimelineMode.clip;
+            });
+          },
+        ),
+        _buildTimelineQuickChip(
+          label: '封面',
+          value: _formatDuration(
+            Duration(
+              milliseconds: (_resolvedCoverTimeSeconds(
+                    _resolvedTrimStart().inMilliseconds / 1000.0,
+                  ) *
+                  1000)
+                  .round(),
+            ),
           ),
-        );
-      },
-    );
-  }
-
-  Widget _buildDistributionPreview() {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      alignment: WrapAlignment.center,
-      children: [
-        _buildPreviewBadge('进入$_distributionPreviewLabel'),
-        _buildPreviewBadge(_primaryDistributionPreviewLabel),
-        _buildPreviewBadge(_fallbackDistributionPreviewLabel),
+          isSelected: _timelineMode == _EditorTimelineMode.cover,
+          onTap: () {
+            setState(() {
+              _timelineMode = _EditorTimelineMode.cover;
+            });
+          },
+        ),
+        _buildStaticInfoChip(
+          _currentOutputLayout.contentOrientation == 'landscape'
+              ? '横屏分发'
+              : '推荐分发',
+        ),
       ],
     );
   }
 
-  Widget _buildWindowsEditorNotice() {
-    return const Padding(
-      padding: EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        children: [
-          Text(
-            'Windows 当前使用极速发布模式',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
+  Widget _buildTimelineQuickChip({
+    required String label,
+    required String value,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: isSelected
+                ? Colors.white
+                : Colors.white.withValues(alpha: 0.10),
           ),
-          SizedBox(height: 8),
-          Text(
-            '默认截取前 15 秒，封面取起始帧。若要生成 HLS 主链，请安装 FFmpeg、设置 FFMPEG_PATH，或将 ffmpeg.exe 放到应用约定目录。',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-              height: 1.5,
-            ),
+        ),
+        child: RichText(
+          text: TextSpan(
+            children: [
+              TextSpan(
+                text: '$label ',
+                style: TextStyle(
+                  color: isSelected ? Colors.black : Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              TextSpan(
+                text: value,
+                style: TextStyle(
+                  color: isSelected ? Colors.black : Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildPreviewBadge(String label) {
+  Widget _buildStaticInfoChip(String label) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white, width: 1),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
       ),
       child: Text(
         label,
         style: const TextStyle(
           color: Colors.white,
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
+          fontWeight: FontWeight.w600,
+          fontSize: 12,
         ),
       ),
     );
   }
+
+  Widget _buildTimelineSection() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildTimelineSectionHeader(),
+          const SizedBox(height: 14),
+          if (_supportsThumbnailTimeline)
+            _buildMobileTimelineEditor()
+          else
+            _buildWindowsTimelineEditor(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTimelineSectionHeader() {
+    return Row(
+      children: [
+        Text(
+          _timelineMode == _EditorTimelineMode.clip ? '片段编辑' : '封面选择',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const Spacer(),
+        _buildModeSegment(_EditorTimelineMode.clip, '片段'),
+        const SizedBox(width: 8),
+        _buildModeSegment(_EditorTimelineMode.cover, '封面'),
+      ],
+    );
+  }
+
+  Widget _buildModeSegment(_EditorTimelineMode mode, String label) {
+    final isSelected = _timelineMode == mode;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _timelineMode = mode;
+        });
+      },
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.black : Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileTimelineEditor() {
+    if (_timelineMode == _EditorTimelineMode.clip) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '拖动时间条选择片段',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 72,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Positioned.fill(child: _buildUnifiedFrameStrip(height: 72)),
+                Positioned.fill(
+                  child: Theme(
+                    data: Theme.of(context).copyWith(
+                      sliderTheme: const SliderThemeData(
+                        trackHeight: 64,
+                        overlayShape: RoundSliderOverlayShape(overlayRadius: 0),
+                      ),
+                    ),
+                    child: Opacity(
+                      opacity: 0.02,
+                      child: TrimSlider(
+                        controller: _editorController,
+                        height: 64,
+                        horizontalMargin: 0,
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: _buildMobileTrimSelectionOverlay(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '已选 ${_formatDuration(_resolvedTrimEnd() - _resolvedTrimStart())}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '拖动选择封面',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 52,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Positioned.fill(child: _buildUnifiedFrameStrip(height: 52)),
+              Positioned.fill(
+                child: Opacity(
+                  opacity: 0.02,
+                  child: CoverSelection(
+                    controller: _editorController,
+                    size: 44,
+                  ),
+                ),
+              ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: _buildMobileCoverOverlay(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '封面 ${_formatDuration(Duration(milliseconds: (_resolvedCoverTimeSeconds(_resolvedTrimStart().inMilliseconds / 1000.0) * 1000).round()))}',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWindowsTimelineEditor() {
+    final totalSeconds = _windowsSourceDuration.inMilliseconds / 1000.0;
+    final startSeconds = totalSeconds * _windowsTrimStartFraction;
+    final endSeconds = totalSeconds * _windowsTrimEndFraction;
+    final coverSeconds = totalSeconds * _windowsCoverFraction;
+    final selectedCoverSeconds = coverSeconds.clamp(startSeconds, endSeconds);
+    if (_timelineMode == _EditorTimelineMode.clip) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '拖动时间条选择片段',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _buildUnifiedFrameStrip(height: 68),
+          const SizedBox(height: 12),
+          RangeSlider(
+            values: RangeValues(startSeconds, endSeconds),
+            min: 0,
+            max: totalSeconds <= 1 ? 1 : totalSeconds,
+            activeColor: Colors.white,
+            inactiveColor: Colors.white.withValues(alpha: 0.18),
+            divisions: totalSeconds.ceil().clamp(1, 600),
+            labels: RangeLabels(
+              _formatDuration(
+                Duration(milliseconds: (startSeconds * 1000).round()),
+              ),
+              _formatDuration(
+                Duration(milliseconds: (endSeconds * 1000).round()),
+              ),
+            ),
+            onChanged: (values) async {
+              final max = totalSeconds <= 1 ? 1.0 : totalSeconds;
+              final safeStart = values.start.clamp(0.0, max);
+              final safeEnd = values.end <= safeStart + 0.2
+                  ? (safeStart + 0.2).clamp(0.2, max)
+                  : values.end.clamp(safeStart + 0.2, max);
+              setState(() {
+                _windowsTrimStartFraction = safeStart / max;
+                _windowsTrimEndFraction = safeEnd / max;
+                _windowsCoverFraction = _windowsCoverFraction.clamp(
+                  _windowsTrimStartFraction,
+                  _windowsTrimEndFraction,
+                );
+              });
+              await _seekWindowsPreview(
+                Duration(milliseconds: (safeStart * 1000).round()),
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '已选 ${_formatDuration(Duration(milliseconds: ((endSeconds - startSeconds) * 1000).round()))}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '拖动选择封面',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 10),
+        _buildUnifiedFrameStrip(height: 68),
+        const SizedBox(height: 12),
+        Slider(
+          value: selectedCoverSeconds,
+          min: startSeconds,
+          max:
+              endSeconds <= startSeconds + 0.1 ? startSeconds + 0.1 : endSeconds,
+          activeColor: Colors.white,
+          inactiveColor: Colors.white.withValues(alpha: 0.18),
+          divisions: ((endSeconds - startSeconds).ceil()).clamp(1, 300),
+          onChanged: (value) async {
+            final max = totalSeconds <= 1 ? 1.0 : totalSeconds;
+            setState(() {
+              _windowsCoverFraction = value / max;
+            });
+            await _seekWindowsPreview(
+              Duration(milliseconds: (value * 1000).round()),
+            );
+          },
+        ),
+        Text(
+          '封面 ${_formatDuration(Duration(milliseconds: (selectedCoverSeconds * 1000).round()))}',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildUnifiedFrameStrip({required double height}) {
+    if (_isLoadingTimelineFrames) {
+      return Container(
+        height: height,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        alignment: Alignment.center,
+        child: const SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: Colors.white,
+          ),
+        ),
+      );
+    }
+
+    if (_timelineFrames.isEmpty) {
+      return Container(
+        height: height,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+        ),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: SizedBox(
+        height: height,
+        child: Row(
+          children: _timelineFrames.map((frame) {
+            return Expanded(
+              child: Image.file(
+                frame.file,
+                fit: BoxFit.cover,
+                height: height,
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileTrimSelectionOverlay() {
+    final totalMs = _sourceDuration.inMilliseconds <= 0
+        ? 1.0
+        : _sourceDuration.inMilliseconds.toDouble();
+    final startFraction = (_resolvedTrimStart().inMilliseconds / totalMs)
+        .clamp(0.0, 1.0);
+    final endFraction = (_resolvedTrimEnd().inMilliseconds / totalMs)
+        .clamp(startFraction, 1.0);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final left = width * startFraction;
+        final right = width * endFraction;
+        final selectionWidth = (right - left).clamp(24.0, width);
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: Row(
+                children: [
+                  SizedBox(width: left),
+                  Container(
+                    width: selectionWidth,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              left: (left - 10).clamp(0.0, width - 20),
+              top: 18,
+              child: _buildTimelineHandle(),
+            ),
+            Positioned(
+              left: (right - 10).clamp(0.0, width - 20),
+              top: 18,
+              child: _buildTimelineHandle(),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildMobileCoverOverlay() {
+    final totalMs = _sourceDuration.inMilliseconds <= 0
+        ? 1.0
+        : _sourceDuration.inMilliseconds.toDouble();
+    final coverFraction = (_resolvedCoverTimeSeconds(
+              _resolvedTrimStart().inMilliseconds / 1000.0,
+            ) *
+            1000 /
+            totalMs)
+        .clamp(0.0, 1.0);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final markerLeft = (width * coverFraction - 10).clamp(0.0, width - 20);
+        return Stack(
+          children: [
+            Positioned(
+              left: markerLeft,
+              top: 4,
+              bottom: 4,
+              child: Container(
+                width: 20,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildTimelineHandle() {
+    return Container(
+      width: 20,
+      height: 32,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: const Center(
+        child: SizedBox(
+          width: 2,
+          height: 16,
+          child: DecoratedBox(
+            decoration: BoxDecoration(color: Colors.black),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCircleAction({
+    required IconData icon,
+    required VoidCallback? onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.24),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Icon(icon, color: Colors.white, size: 22),
+      ),
+    );
+  }
+
+  String _formatDuration(Duration duration) {
+    final totalSeconds = duration.inSeconds.abs();
+    final minutes = totalSeconds ~/ 60;
+    final seconds = totalSeconds % 60;
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_isWindowsDesktop && _isEditorReady && !_windowsController.value.isPlaying) {
+      _windowsController.play();
+    } else if (!_isWindowsDesktop &&
+        _isEditorReady &&
+        !_editorController.isPlaying) {
+      _editorController.video.play();
+    }
+  }
+
+  @override
+  void reassemble() {
+    super.reassemble();
+    if (_isWindowsDesktop && _windowsPreviewController != null) {
+      _windowsPreviewController!.play();
+    } else if (_controller != null) {
+      _controller!.video.play();
+    }
+  }
+
 }

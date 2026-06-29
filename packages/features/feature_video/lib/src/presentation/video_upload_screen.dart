@@ -2,10 +2,12 @@ import 'dart:io';
 import 'dart:async';
 import 'dart:convert';
 import 'package:camera/camera.dart';
+import 'package:core_media/core_media.dart';
 import 'package:core_design_system/core_design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import '../domain/camera_warmup_service.dart';
 import 'video_editor_screen.dart'; // 我们下一步要创建的页面
 
 /// 视频上传准备页 (入口) - 相机拍摄模式
@@ -17,8 +19,6 @@ class VideoUploadScreen extends StatefulWidget {
 }
 
 class _VideoUploadScreenState extends State<VideoUploadScreen> {
-  static const int _targetVideoFps = 60;
-  static const int _targetVideoBitrate = 20000000;
   static const String _debugRunId = 'post-fix';
   CameraController? _cameraController;
   List<CameraDescription>? _cameras;
@@ -26,6 +26,9 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
   bool _isRecording = false;
   bool _isInitializingCamera = true;
   String? _cameraError;
+  VideoOutputLayout _selectedOutputLayout = VideoOutputLayout.portrait;
+  bool _showCameraPrimer = true;
+  bool _isPickingFromGallery = false;
   final ImagePicker _picker = ImagePicker();
 
   // #region debug-point H1:reporter
@@ -81,11 +84,45 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
         overlays: const [],
       ),
     );
-    _initCamera();
+    _showCameraPrimer = !CameraWarmupService.instance.hasUserActivatedCamera &&
+        !CameraWarmupService.instance.hasWarmController;
+    if (!_showCameraPrimer) {
+      _initCamera();
+    } else {
+      _isInitializingCamera = false;
+    }
   }
 
-  Future<void> _initCamera() async {
+  Future<void> _initCamera({bool userInitiated = false}) async {
     try {
+      if (!userInitiated &&
+          !CameraWarmupService.instance.hasUserActivatedCamera &&
+          !CameraWarmupService.instance.hasWarmController) {
+        return;
+      }
+      if (mounted) {
+        setState(() {
+          _isInitializingCamera = true;
+          _cameraError = null;
+        });
+      }
+      final warmLease = await CameraWarmupService.instance.takeWarmController(
+        userInitiated: userInitiated,
+      );
+      if (warmLease != null) {
+        _cameraController = warmLease.controller;
+        _cameras = warmLease.cameras;
+        _selectedCameraIndex = warmLease.selectedCameraIndex;
+        if (mounted) {
+          setState(() {
+            _isInitializingCamera = false;
+            _cameraError = null;
+            _showCameraPrimer = false;
+          });
+        }
+        return;
+      }
+
       _cameras = await availableCameras();
       // #region debug-point H3:available-cameras
       unawaited(
@@ -110,7 +147,9 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
       );
       // #endregion
       if (_cameras != null && _cameras!.isNotEmpty) {
-        _selectedCameraIndex = _selectBestInitialCameraIndex(_cameras!);
+        _selectedCameraIndex = CameraWarmupService.selectBestInitialCameraIndex(
+          _cameras!,
+        );
         // #region debug-point H3:selected-camera
         unawaited(
           _reportDebugEvent(
@@ -127,6 +166,11 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
         );
         // #endregion
         await _setupCameraController();
+        if (mounted) {
+          setState(() {
+            _showCameraPrimer = false;
+          });
+        }
       } else {
         setState(() {
           _cameraError = '未检测到可用摄像头';
@@ -149,9 +193,14 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
         setState(() {
           _cameraError = '摄像头初始化失败';
           _isInitializingCamera = false;
+          _showCameraPrimer = true;
         });
       }
     }
+  }
+
+  Future<void> _beginCameraFlow() async {
+    await _initCamera(userInitiated: true);
   }
 
   Future<void> _setupCameraController() async {
@@ -172,8 +221,9 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
       _cameras![_selectedCameraIndex],
       ResolutionPreset.max,
       enableAudio: false, // 关闭音频避免 Windows 下因为麦克风权限导致的初始化黑屏/卡死
-      fps: Platform.isWindows ? _targetVideoFps : null,
-      videoBitrate: Platform.isWindows ? _targetVideoBitrate : null,
+      fps: Platform.isWindows ? CameraWarmupService.targetVideoFps : null,
+      videoBitrate:
+          Platform.isWindows ? CameraWarmupService.targetVideoBitrate : null,
     );
 
     try {
@@ -187,9 +237,12 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
           data: {
             'cameraName': _cameras![_selectedCameraIndex].name,
             'resolutionPreset': 'max',
-            'fpsTarget': Platform.isWindows ? _targetVideoFps : null,
+            'fpsTarget':
+                Platform.isWindows ? CameraWarmupService.targetVideoFps : null,
             'videoBitrateTarget':
-                Platform.isWindows ? _targetVideoBitrate : null,
+                Platform.isWindows
+                    ? CameraWarmupService.targetVideoBitrate
+                    : null,
             'enableAudio': false,
             'platform': Platform.operatingSystem,
           },
@@ -262,53 +315,6 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
         });
       }
     }
-  }
-
-  int _selectBestInitialCameraIndex(List<CameraDescription> cameras) {
-    if (!Platform.isWindows) {
-      final frontIndex = cameras.indexWhere(
-        (camera) => camera.lensDirection == CameraLensDirection.front,
-      );
-      return frontIndex == -1 ? 0 : frontIndex;
-    }
-
-    var bestIndex = 0;
-    var bestScore = -9999;
-    for (var i = 0; i < cameras.length; i++) {
-      final score = _scoreCamera(cameras[i]);
-      if (score > bestScore) {
-        bestScore = score;
-        bestIndex = i;
-      }
-    }
-    return bestIndex;
-  }
-
-  int _scoreCamera(CameraDescription camera) {
-    final name = camera.name.toLowerCase();
-    var score = 0;
-
-    if (name.contains('integrated')) score += 80;
-    if (name.contains('hd')) score += 30;
-    if (name.contains('full hd')) score += 40;
-    if (name.contains('webcam')) score += 35;
-    if (name.contains('usb')) score += 25;
-    if (name.contains('logitech')) score += 50;
-    if (name.contains('front')) score += 15;
-    if (name.contains('rear') || name.contains('back')) score += 20;
-    if (name.contains('camera')) score += 10;
-    if (name.contains('ir') ||
-        name.contains('infrared') ||
-        name.contains('depth')) {
-      score -= 120;
-    }
-    if (name.contains('virtual') ||
-        name.contains('obs') ||
-        name.contains('droidcam')) {
-      score -= 80;
-    }
-
-    return score;
   }
 
   @override
@@ -388,7 +394,13 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
   }
 
   Future<void> _pickFromGallery() async {
+    if (_isPickingFromGallery) {
+      return;
+    }
     try {
+      setState(() {
+        _isPickingFromGallery = true;
+      });
       // 调用系统相册选择视频 (不限制原始大小)
       final XFile? video = await _picker.pickVideo(source: ImageSource.gallery);
       if (video != null && mounted) {
@@ -396,6 +408,12 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
       }
     } catch (e) {
       debugPrint('Error picking video from gallery: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPickingFromGallery = false;
+        });
+      }
     }
   }
 
@@ -405,8 +423,11 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
     // 强制使用 pushReplacement 或者延迟一点，避免与系统的相册 Picker 生命周期冲突
     Future.microtask(() {
       if (!mounted) return;
-      context.pushInstant<void>(
-        builder: (context) => VideoEditorScreen(file: file),
+      context.pushImmersive<void>(
+        builder: (context) => VideoEditorScreen(
+          file: file,
+          preferredOutputLayout: _selectedOutputLayout,
+        ),
       );
     });
   }
@@ -423,7 +444,8 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
         children: [
           // 1. 相机全屏预览区
           if (_cameraController != null &&
-              _cameraController!.value.isInitialized)
+              _cameraController!.value.isInitialized &&
+              !_showCameraPrimer)
             Container(
               width: double.infinity,
               height: double.infinity,
@@ -441,16 +463,36 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
             )
           else
             Center(
-              child: _cameraError != null
-                  ? Text(
-                      _cameraError!,
-                      style: const TextStyle(color: Colors.white),
-                    )
-                  : const CircularProgressIndicator(color: Colors.white),
+              child: _showCameraPrimer
+                  ? const SizedBox.shrink()
+                  : _cameraError != null
+                      ? Text(
+                          _cameraError!,
+                          style: const TextStyle(color: Colors.white),
+                        )
+                      : const CircularProgressIndicator(color: Colors.white),
             ),
 
           if (_isInitializingCamera)
             Container(color: Colors.black.withValues(alpha: 0.22)),
+
+          IgnorePointer(
+            child: Center(
+              child: _buildCaptureGuide(),
+            ),
+          ),
+
+          Positioned(
+            top: 110,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                child: _buildTopStatusPill(),
+              ),
+            ),
+          ),
 
           // 2. 顶部纯净操作栏：只保留必要控制，不显示任何状态文字
           SafeArea(
@@ -477,6 +519,15 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
 
           // 3. 底部操作区
           Positioned(
+            bottom: 156,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: _buildAspectRatioSelector(),
+            ),
+          ),
+
+          Positioned(
             bottom: 40,
             left: 0,
             right: 0,
@@ -490,26 +541,7 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
                 // 中间录制按钮
                 GestureDetector(
                   onTap: _toggleRecording,
-                  child: Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 4),
-                      color: _isRecording ? Colors.red : Colors.transparent,
-                    ),
-                    child: Center(
-                      child: Container(
-                        width: _isRecording ? 30 : 60,
-                        height: _isRecording ? 30 : 60,
-                        decoration: BoxDecoration(
-                          color: _isRecording ? Colors.red : Colors.white,
-                          borderRadius:
-                              BorderRadius.circular(_isRecording ? 8 : 30),
-                        ),
-                      ),
-                    ),
-                  ),
+                  child: _buildRecordButton(),
                 ),
 
                 // 右侧相册选择按钮
@@ -526,11 +558,20 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(color: Colors.white, width: 1),
                         ),
-                        child: const Icon(
-                          Icons.photo_library,
-                          color: Colors.white,
-                          size: 20,
-                        ),
+                        child: _isPickingFromGallery
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.photo_library,
+                                color: Colors.white,
+                                size: 20,
+                              ),
                       ),
                       const SizedBox(height: 4),
                       const Text(
@@ -585,6 +626,8 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
                 ),
               ),
             ),
+
+          if (_showCameraPrimer) Positioned.fill(child: _buildCameraPrimer()),
         ],
       ),
     );
@@ -606,6 +649,294 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
           border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
         ),
         child: Icon(icon, color: Colors.white, size: 22),
+      ),
+    );
+  }
+
+  Widget _buildAspectRatioSelector() {
+    final isPortrait = _selectedOutputLayout == VideoOutputLayout.portrait;
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.28),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildAspectRatioChip(
+            label: '9:16',
+            selected: isPortrait,
+            onTap: () {
+              setState(() {
+                _selectedOutputLayout = VideoOutputLayout.portrait;
+              });
+            },
+          ),
+          _buildAspectRatioChip(
+            label: '16:9',
+            selected: !isPortrait,
+            onTap: () {
+              setState(() {
+                _selectedOutputLayout = VideoOutputLayout.landscape;
+              });
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAspectRatioChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.black : Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCaptureGuide() {
+    final isPortrait = _selectedOutputLayout == VideoOutputLayout.portrait;
+    return FractionallySizedBox(
+      widthFactor: isPortrait ? 0.54 : 0.82,
+      child: AspectRatio(
+        aspectRatio: isPortrait ? 9 / 16 : 16 / 9,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(32),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.24)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopStatusPill() {
+    if (_showCameraPrimer) {
+      return const SizedBox.shrink();
+    }
+    if (_isRecording) {
+      return _buildStatusPill(
+        key: const ValueKey('recording'),
+        label: '录制中',
+        accentColor: Colors.red,
+      );
+    }
+    if (_isInitializingCamera) {
+      return _buildStatusPill(
+        key: const ValueKey('initializing'),
+        label: '相机准备中',
+        loading: true,
+      );
+    }
+    if (_cameraError != null) {
+      return _buildStatusPill(
+        key: const ValueKey('error'),
+        label: _cameraError!,
+      );
+    }
+    return _buildStatusPill(
+      key: const ValueKey('ready'),
+      label: _selectedOutputLayout == VideoOutputLayout.landscape
+          ? '16:9 已就绪'
+          : '9:16 已就绪',
+    );
+  }
+
+  Widget _buildStatusPill({
+    required Key key,
+    required String label,
+    bool loading = false,
+    Color accentColor = Colors.white,
+  }) {
+    return Container(
+      key: key,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.42),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (loading)
+            const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+          else
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: accentColor,
+                shape: BoxShape.circle,
+              ),
+            ),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecordButton() {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      width: 84,
+      height: 84,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 4),
+        color: _isRecording ? Colors.red.withValues(alpha: 0.18) : Colors.transparent,
+        boxShadow: _isRecording
+            ? [
+                BoxShadow(
+                  color: Colors.red.withValues(alpha: 0.26),
+                  blurRadius: 22,
+                  spreadRadius: 2,
+                ),
+              ]
+            : const [],
+      ),
+      child: Center(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          width: _isRecording ? 30 : 60,
+          height: _isRecording ? 30 : 60,
+          decoration: BoxDecoration(
+            color: _isRecording ? Colors.red : Colors.white,
+            borderRadius: BorderRadius.circular(_isRecording ? 8 : 30),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCameraPrimer() {
+    return Container(
+      color: Colors.black,
+      padding: const EdgeInsets.symmetric(horizontal: 28),
+      child: SafeArea(
+        child: Column(
+          children: [
+            const Spacer(),
+            _buildCaptureGuide(),
+            const SizedBox(height: 40),
+            const Text(
+              '准备开启相机',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _cameraError ??
+                  '首次使用时系统会请求相机权限。授权后，后续进入拍摄会更接近秒开体感。',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                height: 1.6,
+              ),
+            ),
+            const SizedBox(height: 28),
+            GestureDetector(
+              onTap: _isInitializingCamera ? null : _beginCameraFlow,
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                alignment: Alignment.center,
+                child: _isInitializingCamera
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.black,
+                        ),
+                      )
+                    : const Text(
+                        '继续',
+                        style: TextStyle(
+                          color: Colors.black,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              '你也可以直接从相册导入素材',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const Spacer(),
+            GestureDetector(
+              onTap: _pickFromGallery,
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+                ),
+                child: const Icon(
+                  Icons.photo_library_outlined,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
       ),
     );
   }

@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:core_design_system/core_design_system.dart';
 import 'package:core_media/core_media.dart';
 import 'package:core_network/core_network.dart';
+import 'package:feature_video/feature_video.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// 真正的十二星座几何连线图绘制器 (Constellation Art)
@@ -190,6 +191,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   bool _isLoadingVideos = false;
   String? _lastFetchedIdentityId;
   String? _scheduledIdentityFetchId;
+  late final PublishOverlayStore _publishOverlayStore;
+  String? _lastHandledPublishJobId;
 
   void _scheduleIdentityRefresh() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -201,6 +204,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   @override
   void initState() {
     super.initState();
+    _publishOverlayStore = PublishOverlayStore.instance;
+    _publishOverlayStore.addListener(_handlePublishOverlayChanged);
     _themePageController = PageController(
       viewportFraction: 0.54,
       initialPage:
@@ -278,6 +283,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
   @override
   void dispose() {
+    _publishOverlayStore.removeListener(_handlePublishOverlayChanged);
     _autoScrollTimer?.cancel();
     _feedScrollController.dispose();
     _themePageController.dispose();
@@ -289,6 +295,127 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   // 检查是否已登录 (真实连接 Supabase Auth)
   bool _checkIsLoggedIn() =>
       ref.read(supabaseProvider).auth.currentSession != null;
+
+  void _handlePublishOverlayChanged() {
+    if (!mounted) {
+      return;
+    }
+    final state = _publishOverlayStore.state;
+    if (state.isActive && state.pendingVideo != null) {
+      _upsertProfileVideo(state.pendingVideo!);
+    }
+    if (state.stage == PublishOverlayStage.completed &&
+        state.completedVideo != null &&
+        state.jobId != null &&
+        state.jobId != _lastHandledPublishJobId) {
+      _lastHandledPublishJobId = state.jobId;
+      _upsertProfileVideo(state.completedVideo!);
+    }
+    if (state.stage == PublishOverlayStage.failed && state.pendingVideo != null) {
+      _upsertProfileVideo(state.pendingVideo!);
+    }
+  }
+
+  void _upsertProfileVideo(PendingPublishedVideo publishedVideo) {
+    final authorIdentityId = publishedVideo.authorIdentityId;
+    final records = List<PlatformVideoRecord>.from(
+      _videosByIdentity[authorIdentityId] ?? const [],
+    );
+    final record = _recordFromPendingPublishedVideo(publishedVideo);
+    final existingIndex = records.indexWhere(
+      (item) =>
+          item.id == record.id ||
+          item.videoUrl == record.videoUrl ||
+          _extractLocalPublishJobId(item.id) == publishedVideo.jobId,
+    );
+    if (existingIndex == -1) {
+      records.insert(0, record);
+    } else {
+      records[existingIndex] = record;
+    }
+
+    setState(() {
+      _videosByIdentity[authorIdentityId] = records;
+      if (_lastFetchedIdentityId == authorIdentityId) {
+        _myVideos = records;
+        _isLoadingVideos = false;
+      }
+    });
+  }
+
+  PlatformVideoRecord _recordFromPendingPublishedVideo(
+    PendingPublishedVideo video,
+  ) {
+    final user = SupabaseService.currentUser;
+    final isPending = video.isPending;
+    final isFailed = video.isFailed;
+    return PlatformVideoRecord(
+      id: isPending
+          ? 'pending_${video.jobId}'
+          : isFailed
+              ? 'failed_${video.jobId}'
+              : 'published_${video.jobId}',
+      authorId: user?.id ?? '',
+      authorIdentityId: video.authorIdentityId,
+      authorName: video.authorName,
+      description: video.description,
+      videoUrl: video.fallbackPlaybackUrl ?? video.primaryPlaybackUrl,
+      coverUrl: video.coverUrl,
+      streamUrl: video.prefersStreaming ? video.primaryPlaybackUrl : '',
+      streamFormat: video.prefersStreaming ? 'hls' : '',
+      videoObjectKey: '',
+      coverObjectKey: null,
+      streamObjectPrefix: null,
+      contentOrientation: video.contentOrientation,
+      aspectRatioLabel:
+          video.contentOrientation == 'landscape' ? '16:9' : '9:16',
+      workflowStatus: isPending
+          ? 'processing'
+          : isFailed
+              ? 'failed'
+              : 'ready',
+      moderationStatus: isPending ? 'pending' : 'approved',
+      distributionStatus: isPending
+          ? 'pending'
+          : isFailed
+              ? 'offline'
+              : 'ready',
+      distributionChannel:
+          video.contentOrientation == 'landscape'
+              ? 'landscape'
+              : 'recommendation',
+      primaryDistributionKind: video.prefersStreaming ? 'hls' : 'direct_file',
+      processingStatus: isPending
+          ? 'processing'
+          : isFailed
+              ? 'failed'
+              : 'ready',
+      lifecycleStatus: 'active',
+      viewCount: 0,
+      likeCount: 0,
+      commentCount: 0,
+      shareCount: 0,
+      durationSeconds: 0,
+      assetSchemaVersion: 1,
+      width: video.width,
+      height: video.height,
+      createdAt: DateTime.now(),
+      publishedAt: isPending ? null : DateTime.now(),
+    );
+  }
+
+  String? _extractLocalPublishJobId(String id) {
+    if (id.startsWith('pending_')) {
+      return id.substring('pending_'.length);
+    }
+    if (id.startsWith('failed_')) {
+      return id.substring('failed_'.length);
+    }
+    if (id.startsWith('published_')) {
+      return id.substring('published_'.length);
+    }
+    return null;
+  }
 
   int _themeIndexOf(BackgroundType type) {
     final index = BackgroundManager.availableThemes.indexWhere(
@@ -903,73 +1030,141 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         itemCount: _myVideos.length,
         itemBuilder: (context, index) {
           final video = _myVideos[index];
-          // 如果没有专门的封面图，我们就用视频链接假装一下（在真实业务中需要展示封面）
-          // 由于我们已经有了视频，这里可以使用视频组件或封面组件
-          return Container(
-            width: 160,
-            margin: const EdgeInsets.only(right: 2), // 极窄边距
-            color: Colors.white.withValues(alpha: 0.05),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                // 暂时用占位符展示，因为我们的极速压缩只上传了视频文件，在云端还没有配专门的图片字段，或者你可以用 R2 里的占位图
-                Container(
-                  color: Colors.black,
-                  child: const Center(
-                    child: Icon(
-                      Icons.video_library_outlined,
-                      color: Colors.white,
-                      size: 48,
+          final localPublishJobId = _extractLocalPublishJobId(video.id);
+          final isFailedVideo = video.statusLabel == '处理失败';
+          return GestureDetector(
+            onTap: isFailedVideo
+                ? null
+                : () => context.pushImmersive<void>(
+                    builder: (context) => ImmersiveVideoGalleryScreen(
+                      videos: _myVideos,
+                      initialIndex: index,
+                      title: '我的作品',
                     ),
                   ),
-                ),
-                Positioned(
-                  top: 8,
-                  left: 8,
-                  child: _buildVideoMetaBadge(video.statusLabel),
-                ),
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: _buildVideoMetaBadge(video.primaryDistributionLabel),
-                ),
-                // 底部信息遮罩
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  height: 60,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.transparent,
-                          Colors.black.withValues(alpha: 0.8),
-                        ],
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              width: 160,
+              margin: const EdgeInsets.only(right: 2), // 极窄边距
+              color: Colors.white.withValues(alpha: 0.05),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (video.coverUrl.isNotEmpty)
+                    Image.network(
+                      video.coverUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          _buildProfileVideoPlaceholder(),
+                    )
+                  else
+                    _buildProfileVideoPlaceholder(),
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: _buildVideoMetaBadge(video.statusLabel),
+                  ),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: _buildVideoMetaBadge(video.primaryDistributionLabel),
+                  ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: 60,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.8),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-                // 描述信息
-                Positioned(
-                  bottom: 28,
-                  left: 8,
-                  right: 8,
-                  child: Text(
-                    video.description,
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                  Positioned(
+                    bottom: 28,
+                    left: 8,
+                    right: 8,
+                    child: Text(
+                      video.description,
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                ),
-                Positioned(
-                  left: 8,
-                  bottom: 8,
-                  child: _buildVideoMetaBadge(video.distributionChannelLabel),
-                ),
-              ],
+                  Positioned(
+                    left: 8,
+                    bottom: 8,
+                    child: _buildVideoMetaBadge(video.distributionChannelLabel),
+                  ),
+                  if (isFailedVideo && localPublishJobId != null)
+                    Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.62),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.10),
+                          ),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.cloud_off,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                            const SizedBox(height: 10),
+                            const Text(
+                              '发布失败',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            GestureDetector(
+                              onTap: () => _publishOverlayStore.retryFailedPublish(
+                                localPublishJobId,
+                              ),
+                              behavior: HitTestBehavior.opaque,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: const Text(
+                                  '重试发布',
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           );
         },
@@ -1002,6 +1197,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           color: Colors.white,
           fontSize: 10,
           fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileVideoPlaceholder() {
+    return Container(
+      color: Colors.black,
+      child: const Center(
+        child: Icon(
+          Icons.video_library_outlined,
+          color: Colors.white,
+          size: 48,
         ),
       ),
     );

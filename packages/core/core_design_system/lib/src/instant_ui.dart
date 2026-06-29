@@ -14,6 +14,41 @@ class InstantPageRoute<T> extends PageRouteBuilder<T> {
         );
 }
 
+class ImmersivePageRoute<T> extends PageRouteBuilder<T> {
+  ImmersivePageRoute({
+    required WidgetBuilder builder,
+    super.settings,
+    super.fullscreenDialog = false,
+  }) : super(
+          transitionDuration: const Duration(milliseconds: 180),
+          reverseTransitionDuration: const Duration(milliseconds: 150),
+          pageBuilder: (context, animation, secondaryAnimation) {
+            return builder(context);
+          },
+          transitionsBuilder:
+              (context, animation, secondaryAnimation, child) {
+            final curved = CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+              reverseCurve: Curves.easeInCubic,
+            );
+            return FadeTransition(
+              opacity: Tween<double>(begin: 0.0, end: 1.0).animate(curved),
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, 0.028),
+                  end: Offset.zero,
+                ).animate(curved),
+                child: ScaleTransition(
+                  scale: Tween<double>(begin: 0.992, end: 1.0).animate(curved),
+                  child: child,
+                ),
+              ),
+            );
+          },
+        );
+}
+
 class InstantUI {
   const InstantUI._();
 
@@ -55,6 +90,50 @@ class InstantUI {
         settings: settings,
         fullscreenDialog: fullscreenDialog,
       ),
+    );
+  }
+
+  static Route<T> immersivePageRoute<T>({
+    required WidgetBuilder builder,
+    RouteSettings? settings,
+    bool fullscreenDialog = false,
+  }) {
+    return ImmersivePageRoute<T>(
+      builder: builder,
+      settings: settings,
+      fullscreenDialog: fullscreenDialog,
+    );
+  }
+
+  static Future<T?> pushImmersive<T>(
+    BuildContext context, {
+    required WidgetBuilder builder,
+    RouteSettings? settings,
+    bool fullscreenDialog = false,
+  }) {
+    return Navigator.of(context).push<T>(
+      immersivePageRoute<T>(
+        builder: builder,
+        settings: settings,
+        fullscreenDialog: fullscreenDialog,
+      ),
+    );
+  }
+
+  static Future<T?> pushReplacementImmersive<T extends Object?, TO extends Object?>(
+    BuildContext context, {
+    required WidgetBuilder builder,
+    RouteSettings? settings,
+    bool fullscreenDialog = false,
+    TO? result,
+  }) {
+    return Navigator.of(context).pushReplacement<T, TO>(
+      immersivePageRoute<T>(
+        builder: builder,
+        settings: settings,
+        fullscreenDialog: fullscreenDialog,
+      ),
+      result: result,
     );
   }
 
@@ -194,6 +273,34 @@ extension InstantBuildContext on BuildContext {
     TO? result,
   }) {
     return InstantUI.replacePage<T, TO>(
+      this,
+      builder: builder,
+      settings: settings,
+      fullscreenDialog: fullscreenDialog,
+      result: result,
+    );
+  }
+
+  Future<T?> pushImmersive<T>({
+    required WidgetBuilder builder,
+    RouteSettings? settings,
+    bool fullscreenDialog = false,
+  }) {
+    return InstantUI.pushImmersive<T>(
+      this,
+      builder: builder,
+      settings: settings,
+      fullscreenDialog: fullscreenDialog,
+    );
+  }
+
+  Future<T?> replaceWithImmersive<T extends Object?, TO extends Object?>({
+    required WidgetBuilder builder,
+    RouteSettings? settings,
+    bool fullscreenDialog = false,
+    TO? result,
+  }) {
+    return InstantUI.pushReplacementImmersive<T, TO>(
       this,
       builder: builder,
       settings: settings,
